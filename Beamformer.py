@@ -58,8 +58,6 @@ class Beamformer:
         for i in range(0, numProj):
             projWfmList.append(RP.projDataArray[i].wfmRC.vector())
         wfmData = torch.stack(projWfmList)
-       #h = wfmData.register_hook(lambda x: print("wfmData" + str(x[:, :, 0].nonzero().data)))
-       # RP.hooks.append(h)
 
         pixGridReal = []
         pixGridImag = []
@@ -67,25 +65,38 @@ class Beamformer:
         # Much faster now that I loop over projectors rather than pixels
         x = torch.ones(self.numPix, 2)
         z = (torch.ones(self.numPix) * torch.tensor(RP.zs[0]))**2
-
-
+        width = -1 * torch.ones(self.numPix, dtype=torch.float64)
+        ws = 9
         for i in range(0, RP.numProj):
             posVec_pix = x * posVec[i, :]
             sum = torch.sum((self.pixPos - posVec_pix)**2, 1)
-            #print(sum)
             tot_sum = sum + z
             tofs = 2 * torch.sqrt(tot_sum)
-            #tofs = 2 * torch.sqrt(torch.sum(torch.sum((self.pixPos - posVec_pix)**2, 1), (z*torch.tensor([RP.zs[0]]))**2, 1))
-            tof_ind = torch.round((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).long()
-            #print(tof_ind)
+            tof_ind = (tofs/torch.tensor(RP.c)) * torch.tensor(RP.Fs)
+            norm_tof_ind = 2 * (tof_ind / RP.nSamples) - 1
+            tof_tmp = torch.stack((width, norm_tof_ind), 1).view(1, -1, 1, 2)
 
-            pixGridReal.append(wfmData[i, tof_ind.detach(), 0])
-            pixGridImag.append(wfmData[i, tof_ind.detach(), 1])
+            #Process window around each index to account for area of each pixel
+            real = wfmData[i, :, 0]
+            reshape_real = real.view(1, 1, -1, 1)
+            unfold_real = torch.nn.functional.unfold(reshape_real, kernel_size=(ws, 1)).view(1, ws, -1, 1)
 
-        #self.scene = torch.stack(((torch.sum(torch.stack(pixGridReal), 0)), torch.sum(torch.stack(pixGridImag), 0)), dim=1)
+            imag = wfmData[i, :, 1]
+            reshape_imag = imag.view(1, 1, -1, 1)
+            unfold_imag = torch.nn.functional.unfold(reshape_imag, kernel_size=(ws, 1)).view(1, ws, -1, 1)
+
+            sample_real = torch.nn.functional.grid_sample(unfold_real, tof_tmp, align_corners=False)
+            sample_imag = torch.nn.functional.grid_sample(unfold_imag, tof_tmp, align_corners=False)
+
+            sum_real = torch.sum(sample_real.squeeze(), 0)
+            sum_imag = torch.sum(sample_imag.squeeze(), 0)
+
+
+
+            pixGridReal.append(sum_real)
+            pixGridImag.append(sum_imag)
+
         self.scene = Complex(real=torch.sum(torch.stack(pixGridReal), 0), imag=torch.sum(torch.stack(pixGridImag), 0))
-        #h = self.scene.register_hook(lambda x: print("scene" + str(x)))
-        #RP.hooks.append(h)
         return self.scene
 
     def beamform(self, RP):

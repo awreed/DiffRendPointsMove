@@ -27,13 +27,9 @@ class ProjData:
         yRC = np.fft.ifft(np.multiply(Data, np.conj(Pulse)))
 
 
-    def RCTorch(self, transmitSignal):
+    def RCTorch(self, RP):
         #nSamples = self.Fs * self.tDur
-        pulse = transmitSignal
-
-        # Forward fourier transform of transmit signal
-        PulseHil = torchHilbert(pulse)
-        Pulse = torch.fft(PulseHil, 1)
+        Pulse = RP.Pulse
 
         # Forward fourier transform of received waveform
         DataHil = torchHilbert(self.wfm)

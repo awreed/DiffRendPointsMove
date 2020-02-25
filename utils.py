@@ -18,6 +18,7 @@ def compConj(t1):
     return torch.stack((r, imag), 1)
 
 
+
 def compExp(w, sign):
     # Returns N X 2 array of complex exp where e^(jw) = cos(w) + sign*j*sin(w)
     # w is the input array to the exponential
@@ -58,10 +59,6 @@ def xcorr(t1, t2):
     RC = torch.ifft(compMul(T2, compConj(T1)), 1)[:, 0]
 
     return RC
-
-
-
-
 
 # https://stackoverflow.com/questions/56380536/hilbert-transform-in-python
 # 0 error against Scipy and works with autograd

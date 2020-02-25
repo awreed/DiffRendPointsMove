@@ -22,6 +22,8 @@ class RenderParameters:
         self.c = kwargs.get('c', 343.0)
 
         self.transmitSignal = None  # Transmitted signal (Set to torch type)
+        self.pulse = None  # Hilbert transform of the transmitted signal
+        self.Pulse = None  # FFT of the hilbert transform of transmitted signal
         self.scene = None  # Stores the processed .obj file
         self.thetaStart = None  # Projector start angle in degrees
         self.thetaStop = None  # Projector stop angle in degrees
@@ -74,6 +76,9 @@ class RenderParameters:
         # Convert transmit signal to tensor
         self.transmitSignal = torch.from_numpy(sig).cuda()
         self.transmitSignal.requires_grad = False
+
+        self.pulse = torchHilbert(self.transmitSignal)
+        self.Pulse = torch.fft(self.pulse, 1).cuda()
 
     def defineProjectorPosGrid(self, **kwargs):
         self.xStart = kwargs.get('xStart', -1)
