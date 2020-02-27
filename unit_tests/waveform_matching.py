@@ -32,7 +32,7 @@ EST_Loc = torch.linspace(0, 1, len(GT_Wfm1)).view(-1, 1).cuda()
 
 loss_val = 10000
 thresh = 10
-optimizer = torch.optim.SGD([ps_EST], lr=.5, momentum=0.0)
+optimizer = torch.optim.SGD([ps_EST], lr=.05, momentum=0.0)
 wass_loss = SamplesLoss(loss="sinkhorn", p=1, blur=.01, diameter=1.0)
 lr = .01
 losses = []

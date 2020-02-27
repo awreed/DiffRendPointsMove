@@ -9,7 +9,7 @@ class RenderParameters:
     def __init__(self, **kwargs):
         # self.Fs = torch.tensor([kwargs.get('Fs', 100000)], requires_grad=True)
         # self.tDur = torch.tensor([kwargs.get('tDur', .02)], requires_grad=True)
-        self.Fs = kwargs.get('Fs', 100000) * 1.0
+        self.Fs = kwargs.get('Fs', 60000) * 1.0
         self.tDur = kwargs.get('tDur', .04)
         self.nSamples = self.Fs * self.tDur
 
@@ -116,9 +116,6 @@ class RenderParameters:
         for i in range(0, N):
             tmp = self.hooks[i]
             tmp.remove()
-
-
-
 
     def defineProjectorPos(self, **kwargs):
         self.thetaStart = kwargs.get('thetaStart', 0)

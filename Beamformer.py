@@ -66,7 +66,7 @@ class Beamformer:
         x = torch.ones(self.numPix, 2)
         z = (torch.ones(self.numPix) * torch.tensor(RP.zs[0]))**2
         width = -1 * torch.ones(self.numPix, dtype=torch.float64)
-        ws = 9
+        ws = 8
         for i in range(0, RP.numProj):
             posVec_pix = x * posVec[i, :]
             sum = torch.sum((self.pixPos - posVec_pix)**2, 1)
