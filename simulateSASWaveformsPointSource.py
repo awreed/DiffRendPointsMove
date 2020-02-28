@@ -23,9 +23,10 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None):
                 t = torch.sqrt(torch.sum((pData.projPos - ps[j, :]) ** 2) + torch.tensor(RP.zs[0]) ** 2)
 
                 tau = (t * 2) / torch.tensor(RP.c, requires_grad=True)
+                #h = tau.register_hook(lambda x: print(x.data))
+                #RP.hooks.append(h)
 
-                pData.wfms.append(torchTimeDelay(RP.transmitSignal, torch.tensor(RP.Fs, requires_grad=True),
-                                           tau, RP))
+                pData.wfms.append(torchTimeDelay(RP, tau))
 
             pData.wfm = torch.sum(torch.stack(pData.wfms), 0)
             #print(pData.wfm.shape)

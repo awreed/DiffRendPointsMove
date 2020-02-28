@@ -53,19 +53,19 @@ if __name__ == '__main__':
     tauEST = torch.tensor([0.009], requires_grad=True).cuda()
 
     sigGT = torchTimeDelay(RP.transmitSignal, torch.tensor(RP.Fs, requires_grad=True),
-                           tauGT)
+                           tauGT, RP)
 
-    distSigGT = vectorDistribution(probs=sigGT)
+    distSigGT = VectorDistribution(sigGT.abs())
     print(distSigGT.mean)
 
     #print(distSigGT.mean)
 
     criterion = torch.nn.PairwiseDistance(p=1.0)
-    learning_rate = 1e-10
+    learning_rate = 1e-13
 
     loss = 100
 
-    optimizer = torch.optim.SGD([tauEST], lr=.00000000001)
+    optimizer = torch.optim.SGD([tauEST], lr=learning_rate)
     #a = .4
     #b = 1 - a
 
@@ -73,8 +73,8 @@ if __name__ == '__main__':
         optimizer.zero_grad()
         #tauESTClamp = torch.clamp(tauEST, 0, 0.02)
         sigEst = torchTimeDelay(RP.transmitSignal, torch.tensor(RP.Fs, requires_grad=True),
-                                tauEST)
-        distSigEst = vectorDistribution(probs=sigEst)
+                                tauEST, RP)
+        distSigEst = VectorDistribution(sigEst.abs())
         mean_loss = (distSigGT.mean - distSigEst.mean)**2
         L1_loss = .0001*criterion(sigEst.unsqueeze(0), sigGT.unsqueeze(0)) + mean_loss
         #print(mean_loss)

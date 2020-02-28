@@ -9,7 +9,7 @@ class RenderParameters:
     def __init__(self, **kwargs):
         # self.Fs = torch.tensor([kwargs.get('Fs', 100000)], requires_grad=True)
         # self.tDur = torch.tensor([kwargs.get('tDur', .02)], requires_grad=True)
-        self.Fs = kwargs.get('Fs', 60000) * 1.0
+        self.Fs = kwargs.get('Fs', 100000) * 1.0
         self.tDur = kwargs.get('tDur', .04)
         self.nSamples = self.Fs * self.tDur
 
@@ -63,8 +63,10 @@ class RenderParameters:
     def generateTransmitSignal(self):
         fs = cvtNP(self.Fs)
         tDur = cvtNP(self.tDur)
+        #print(fs)
 
         sig = np.zeros(int(fs * tDur))  # Allocate entire receive signal
+        #sig[0] = 1
         times = np.linspace(self.tStart, self.tStop - 1 / fs, num=int((self.tStop - self.tStart) * fs))
         LFM = scipy.signal.chirp(times, self.fStart, self.tStop, self.fStop)  # Generate LFM chirp
         window = scipy.signal.tukey(len(LFM), self.winRatio)

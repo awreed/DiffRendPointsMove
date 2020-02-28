@@ -30,9 +30,6 @@ def simulateWaveformsBatched(RP, ps, BI=None):
             pData.RCTorch(RP)
             RP.projDataArray.append(pData)
 
-    #plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
-    #plt.show()
-
 def compExp(w, sign):
     real = torch.cos(w)
     imag = sign * torch.sin(w)
@@ -40,11 +37,6 @@ def compExp(w, sign):
 
 def timeDelayBatched(RP, tau):
     ValueError(tau.dim() > 1, "Tau should be 1-d vector or scalar element")
-    B = tau.numel()
-    if B == 1:
-        #  Call torch other torch time delay. or rewrite this thing to handle it i guess
-        print("B == 1")
-
     df = RP.Fs / (len(RP.transmitSignal) * 1.0)
     f_ind = torch.linspace(0, len(RP.transmitSignal) - 1, steps=len(RP.transmitSignal), dtype=torch.float64)
     f = f_ind * df
@@ -62,7 +54,6 @@ def timeDelayBatched(RP, tau):
     mul = torch.stack((ac - bd, bc + ad), 2)
     tsd = torch.ifft(mul, 1)[:, :, 0]
     return torch.sum(tsd, 0).cuda()
-
 
 
 

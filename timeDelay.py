@@ -9,12 +9,13 @@ import matplotlib.pyplot as plt
 
 
 # 0 error in unit test
-def torchTimeDelay(x, fs, tau, RP):
+def torchTimeDelay(RP, tau):
     #  Delay a signal in time
-    df = fs / torch.tensor([len(x) * 1.0], requires_grad=False)
-    f_ind = torch.linspace(0, len(x) - 1, steps=len(x))
+    df = RP.Fs / torch.tensor([len(RP.transmitSignal) * 1.0], requires_grad=False)
+    #print(fs)
+    f_ind = torch.linspace(0, len(RP.transmitSignal) - 1, steps=len(RP.transmitSignal))
     f = f_ind * df.item()
-    f[f > (fs.item() / 2)] -= fs.item()
+    f[f > (RP.Fs / 2)] -= RP.Fs
 
     arg = 2*torch.tensor([math.pi])*tau*f
     #h = arg.register_hook(lambda z: print(torch.sum(z)))
@@ -22,7 +23,7 @@ def torchTimeDelay(x, fs, tau, RP):
 
     sign = torch.tensor([-1.0], requires_grad=True)
     pr = compExp(arg, sign)
-    X = torch.fft(torchHilbert(x), 1)
+    X = torch.fft(torchHilbert(RP.transmitSignal), 1)
     tsd = torch.ifft(compMul(X, pr), 1)[:, 0]  # Only return the real values
 
     return tsd.cuda()

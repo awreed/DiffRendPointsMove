@@ -21,6 +21,7 @@ class ProjData:
     def RC(self, transmitSignal):
         # Replica-correlate using the fft
         nSamples = self.Fs*self.tDur
+        print(nSamples)
         pulse = transmitSignal
         Pulse = np.fft.fft(hilbert(pulse), int(nSamples))
         Data = np.fft.fft(hilbert(self.wfm), int(nSamples))
@@ -30,6 +31,7 @@ class ProjData:
     def RCTorch(self, RP):
         #nSamples = self.Fs * self.tDur
         Pulse = RP.Pulse
+
 
         # Forward fourier transform of received waveform
         DataHil = torchHilbert(self.wfm)

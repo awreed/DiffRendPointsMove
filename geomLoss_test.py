@@ -70,8 +70,8 @@ t_i = torch.zeros(numEl).type(dtype)
 t_j = torch.zeros(numEl).type(dtype)
 
 
-t_i[100:200] = torch.randn(100).abs()
-t_j[800:900] = torch.randn(100).abs()
+t_i[800:802] = 0.5
+t_j[100] = 1.0
 
 t_i = t_i/torch.norm(t_i, p=1)
 t_j = t_j/torch.norm(t_j, p=1)
@@ -102,7 +102,7 @@ loss_window = vis.line(
     X=torch.zeros((1)).cpu(),
     opts=dict(xlabel='epoch', ylabel='Loss', title='Wass-1 Loss', legend=['Loss']))
 
-def gradient_flow(loss, lr=1):
+def gradient_flow(loss, lr=.01):
     """Flows along the gradient of the cost function, using a simple Euler scheme.
 
     Parameters:
