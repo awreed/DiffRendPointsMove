@@ -14,6 +14,7 @@ class ProjData:
         #self.wfm = torch.zeros((int(self.Fs*self.tDur)), requires_grad=True)
         self.wfm = None
         self.wfmRC = None
+        self.normWfmRC = None
         self.t = None
         self.tau = None
         self.wfms = []
@@ -40,5 +41,6 @@ class ProjData:
         # Definition of cross-correlation
         yRC = torch.ifft(compMul(Data, compConj(Pulse)), 1)
         self.wfmRC = Complex(real=yRC[:, 0].cuda(), imag=yRC[:, 1].cuda())
+        self.normWfmRC = self.wfmRC.abs()/torch.norm(self.wfmRC.abs(), p=1.0)
 
 
