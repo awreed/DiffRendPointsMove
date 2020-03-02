@@ -14,14 +14,14 @@ with torch.no_grad():
     RP_GT = RenderParameters()
     RP_GT.generateTransmitSignal()
     RP_GT.defineProjectorPos(thetaStart=0, thetaStop=0, thetaStep=1, rStart=3, rStop=3, zStart=.3, zStop=.3)
-    ps_GT = torch.tensor([[0.0, 1.0], [0.0, -1.0]], requires_grad=False).cuda()
+    ps_GT = torch.tensor([[-1.0, 1.0], [1.0, -1.0]], requires_grad=False).cuda()
     simulateWaveformsBatched(RP_GT, ps_GT)
     GT_Wfm1 = RP_GT.projDataArray[0].wfmRC.abs()
 
     RP_EST = RenderParameters()
     RP_EST.generateTransmitSignal()
     RP_EST.defineProjectorPos(thetaStart=0, thetaStop=0, thetaStep=1, rStart=3, rStop=3, zStart=.3, zStop=.3)
-    ps_EST = torch.tensor([[-.5, -.5], [.1, .5]], requires_grad=False).cuda()
+    ps_EST = torch.tensor([[0, .5], [0, .5]], requires_grad=False).cuda()
 
     GT_Loc = torch.linspace(0, 1, len(GT_Wfm1)).view(-1, 1).cuda()
     EST_Loc = torch.linspace(0, 1, len(GT_Wfm1)).view(-1, 1).cuda()
@@ -39,7 +39,7 @@ wiggle = 2.0*(1/RP_GT.Fs)*RP_GT.c
 noise = torch.distributions.normal.Normal(torch.tensor([0.0]), torch.tensor([wiggle]))
 
 losses = []
-fig, axes = plt.subplots(1, 2)
+fig, axes = plt.subplots(1, 1)
 epochs = 500
 for i in range(0, epochs):
     simulateWaveformsBatched(RP_EST, ps)
@@ -63,17 +63,18 @@ for i in range(0, epochs):
         #loss = torch.sum(p1 + p2)
         losses.append(loss)
 
-        axes[0].plot(EST_Wfm.clone().detach().cpu().numpy(), color="blue")
-        axes[0].plot(GT_Wfm.clone().detach().cpu().numpy(), color="red")
+        axes.plot(EST_Wfm.clone().detach().cpu().numpy(), color="blue")
+        axes.plot(GT_Wfm.clone().detach().cpu().numpy(), color="red")
 
         plt.pause(0.05)
+        plt.savefig("../figs/fig" + str(i) + ".png", dpi=fig.dpi)
 
-    axes[0].clear()
+    axes.clear()
     final_loss = torch.sum(torch.stack(losses))
     print(final_loss)
 
     final_loss.backward()
-    ps.data += noise.sample(ps.shape).squeeze()
+    #ps.data += noise.sample(ps.shape).squeeze()
     ps.data -= lr*ps.grad
     ps.grad.zero_()
     losses.clear()
