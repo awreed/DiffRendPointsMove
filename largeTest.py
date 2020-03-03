@@ -24,8 +24,7 @@ if __name__ == '__main__':
         EST_Mesh.getCentroids()
 
         GT = GT_Mesh.centroids
-        #GT = torch.tensor([[0, .5], [0, -.5]], requires_grad=False).cuda()
-        #EST = torch.tensor([[-.5, -.5], [-.25, -.25]], requires_grad=False).cuda()
+
         EST = EST_Mesh.centroids
         GT = torch.from_numpy(GT).cuda()
         EST = torch.from_numpy(EST).cuda()
@@ -42,19 +41,16 @@ if __name__ == '__main__':
             GT_Wfms.append(pData_gt.normWfmRC)
         GT_Wfms_T = torch.stack(GT_Wfms)
 
-
         # Beamformer to create images from projector waveforms
         BF = Beamformer(sceneDimX=[-2, 2], sceneDimY=[-2, 2], sceneDimZ=[0, 0], nPix=[256, 256, 1], dim=2)
         x_vals = torch.unique(BF.pixPos[:, 0]).numel()
         y_vals = torch.unique(BF.pixPos[:, 1]).numel()
 
         GT_BF = BF.beamformTest(RP_GT).abs()
+        GT_BF = GT_BF/torch.norm(GT_BF, p=1)
         GT_XY = GT_BF.view(x_vals, y_vals)
         plt.imshow(GT_XY.detach().cpu().numpy())
-        plt.savefig("pics1/GT.png")
-        del RP_GT
-        del GT_BF
-        del GT_XY
+        plt.savefig("pics2/GT.png")
 
         # Estimate stuff
         RP_EST = RenderParameters()
@@ -78,75 +74,31 @@ if __name__ == '__main__':
 
     ps_est = EST.clone()
     ps_est.requires_grad = True
-    fig, axes = plt.subplots(1, 1)
-    losses = []
-
-    Batches = []
-    for i in range(0, math.floor(RP_EST.numProj/BS)):
-        tmp = np.linspace(i*(BS), i*(BS) + (BS-1), BS)
-        Batches.append(tmp)
+    optimizer = torch.optim.Adam([ps_est], lr=0.1)
 
     for i in range(0, epochs):
-        # Coarse search
-        if(i < 1300):
-            batch_indices = random.sample(range(0, RP_EST.numProj - 1), BS)
-            simulateWaveformsBatched(RP_EST, ps_est, batch_indices)
-            GT_Wfms_B = GT_Wfms_T[batch_indices, :].to(dev1)
-            EST_Wfms = []
-            for pData_est in RP_EST.projDataArray:
-                EST_Wfms.append(pData_est.normWfmRC)
-            EST_Wfms_B = torch.stack(EST_Wfms).to(dev1)
+        simulateWaveformsBatched(RP_EST, ps_est)
+        EST = BF.beamformTest(RP_EST).abs()
+        EST_BF = EST/torch.norm(EST, p=1)
 
-            loss = wass_loss(GT_Wfms_B, EST_Loc_B,
-                             EST_Wfms_B, GT_Loc_B)
+        #loss = torch.sum(torch.sqrt((EST_BF - GT_BF)**2))
 
-            final_loss = torch.sum(loss)
-        # Fine search
-        else:
-            simulateWaveformsBatched(RP_EST, ps_est)
+        loss = wass_loss(EST_BF, BF.pixPos[:, 0:2], GT_BF, BF.pixPos[:, 0:2])
 
-            EST_Wfms = []
-            for pData_est in RP_EST.projDataArray:
-                EST_Wfms.append(pData_est.normWfmRC)
-            EST_Wfms_T = torch.stack(EST_Wfms).to(dev1)
-
-            for batch in Batches:
-                GT_Wfms_B = GT_Wfms_T[batch, :].to(dev1)
-                EST_Wfms_B = EST_Wfms_T[batch, :].to(dev1)
-
-                loss = wass_loss(GT_Wfms_B, EST_Loc_B,
-                                 EST_Wfms_B, GT_Loc_B)
-                losses.append(loss)
-
-            final_loss = torch.sum(torch.stack(losses))
-
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+        final_loss = loss.item()
         print(final_loss)
-        final_loss.backward()
-        losses.clear()
+
+        GT_XY = EST_BF.view(x_vals, y_vals)
+        plt.imshow(GT_XY.detach().cpu().numpy())
+        plt.savefig("pics2/est" + str(i) + ".png")
 
         ps_est.data += noise.sample(ps_est.shape).squeeze()
         ps_est.data -= lr * ps_est.grad
         ps_est.grad.zero_()
 
-        vis.line(X=torch.ones((1)).cpu() * i, Y=final_loss.unsqueeze(0).cpu(), win=loss_window, update='append')
-        del loss
-        del final_loss
-        del EST_Wfms_B
-        del GT_Wfms_B
-
-        if i % 50 == 0:
-            torch.cuda.empty_cache()
-            simulateWaveformsBatched(RP_EST, ps_est)
-            EST_BF = BF.beamformTest(RP_EST).abs().detach()
-            EST_XY = EST_BF.view(x_vals, y_vals)
-            plt.imshow(EST_XY.cpu().numpy())
-            plt.savefig("pics1/est" + str(i) + ".png")
-            del EST_BF
-            del EST_XY
-        #axes.clear()
-        #axes.clear()
-    #plt.show()
-
-
+        vis.line(X=torch.ones((1)).cpu() * i, Y=loss.unsqueeze(0).cpu(), win=loss_window, update='append')
 
 

@@ -18,6 +18,13 @@ def compConj(t1):
     return torch.stack((r, imag), 1)
 
 
+from math import pi, sqrt, exp
+
+def gauss(n=9,sigma=1):
+    r = range(-int(n/2),int(n/2)+1)
+    return [1 / (sigma * sqrt(2*pi)) * exp(-float(x)**2/(2*sigma**2)) for x in r]
+
+
 
 def compExp(w, sign):
     # Returns N X 2 array of complex exp where e^(jw) = cos(w) + sign*j*sin(w)
