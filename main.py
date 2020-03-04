@@ -39,12 +39,12 @@ if __name__ == '__main__':
         RP_GT = RenderParameters()
         RP_GT.generateTransmitSignal()
         RP_GT.defineProjectorPos(thetaStart=0, thetaStop=0, thetaStep=1, rStart=2, rStop=2, zStart=.3, zStop=.3)
-        ps_GT = torch.tensor([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], requires_grad=False).cuda()
+        ps_GT = torch.tensor([[-1.0, -1.0], [1.0, 1.0]], requires_grad=False).cuda()
         simulateSASWaveformsPointSource(RP_GT, ps_GT)
         print(RP_GT.numProj)
 
         # Beamformer to create images from projector wavef orms
-        BF = Beamformer(sceneDimX=[-2, 2], sceneDimY=[-2, 2], sceneDimZ=[0, 0], nPix=[64, 64, 1], dim=2)
+        BF = Beamformer(RP=RP_GT, sceneDimX=[-2, 2], sceneDimY=[-2, 2], sceneDimZ=[0, 0], nPix=[64, 64, 1], dim=2)
         x_vals = torch.unique(BF.pixPos[:, 0]).numel()
         y_vals = torch.unique(BF.pixPos[:, 1]).numel()
         GT = BF.softBeamformer(RP_GT).abs()
@@ -52,7 +52,7 @@ if __name__ == '__main__':
         plt.imshow(GT_XY.detach().cpu().numpy())
         plt.savefig("pics1/GT.png")
 
-        ps_EST = torch.tensor([[-.9, -.9], [-.9, .9], [.9, -.9], [.9, .9]], requires_grad=False).cuda()
+        ps_EST = torch.tensor([[.1, .1], [-.1, -.1]], requires_grad=False).cuda()
 
         vis = visdom.Visdom()
         loss_window = vis.line(
@@ -73,7 +73,8 @@ if __name__ == '__main__':
 
         est_xy = est.view(x_vals, y_vals)
         plt.imshow(est_xy.detach().cpu().numpy())
-        plt.pause(.05)
+        plt.savefig("pics1/est" + str(i) + ".png")
+        #plt.pause(.05)
 
         loss = torch.sum(torch.sqrt((GT - est)**2))
 

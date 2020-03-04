@@ -19,11 +19,15 @@ class Beamformer:
         self.sceneDimY = kwargs.get('sceneDimY', np.array([-.15, .15]))
         self.sceneDimZ = kwargs.get('sceneDimZ', np.array([-.15, .15]))
 
+        self.RP = kwargs.get('RP', None)
+
         self.nPix = kwargs.get('nPix', np.array([128, 128, 64]))
 
         self.xVect = np.linspace(self.sceneDimX[0], self.sceneDimX[1], self.nPix[0])
         self.yVect = np.linspace(self.sceneDimY[0], self.sceneDimY[1], self.nPix[1])
         self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.nPix[2])
+
+        #self.window = self.windowIndex(self.RP)
 
         self.dim = kwargs.get('dim', 3)
 
@@ -48,13 +52,16 @@ class Beamformer:
             self.pixPos = torch.from_numpy(pixPos).cuda()
             self.pixPos.requires_grad = True
 
+
+
     def windowIndex(self, RP, ind):
-        windowLeft = torch.linspace(0, ind, ind)
-        windowRight = torch.linspace(ind, int(RP.nSamples-1), int(RP.nSamples-ind))
+        windowLeft = torch.linspace(0, 1, ind)
+        windowRight = torch.linspace(1, 0, int(RP.nSamples - ind))
         window = torch.cat((windowLeft, windowRight), 0)
         return window
 
-    # Need to rewrite this guy ok.
+        # Need to rewrite this guy ok.
+
     def softBeamformer(self, RP):
         posVecList = []
         for i in range(0, RP.numProj):
@@ -74,11 +81,11 @@ class Beamformer:
 
         for i in range(0, RP.numProj):
             for j in range(0, self.numPix):
-                t = torch.sqrt(torch.sum((posVec[i] - self.pixPos[j, :])**2) + torch.tensor(RP.zs[0])**2)
-                tof = (2*t)/(RP.c) * RP.Fs
+                t = torch.sqrt(torch.sum((posVec[i] - self.pixPos[j, :]) ** 2) + torch.tensor(RP.zs[0]) ** 2)
+                tof = (2 * t) / (RP.c) * RP.Fs
                 w = self.windowIndex(RP, int(tof))
-                realIntensity = torch.sum(wfmData[i, :, 0]*w)
-                imagIntensity = torch.sum(wfmData[i, :, 1]*w)
+                realIntensity = torch.sum(wfmData[i, :, 0] * w)
+                imagIntensity = torch.sum(wfmData[i, :, 1] * w)
 
                 intensityReal.append(realIntensity)
                 intensityImag.append(imagIntensity)
@@ -94,10 +101,58 @@ class Beamformer:
         realSum = torch.sum(pixGridRealTensor, 0)
         imagSum = torch.sum(pixGridImagTensor, 0)
 
-
         self.scene = Complex(real=realSum, imag=imagSum)
         return self.scene
 
+    """
+    def windowIndex(self, RP):
+        full_window = []
+        for ind in range(0, RP.nSamples):
+            windowLeft = torch.linspace(0, 1, ind)
+            windowRight = torch.linspace(1, 0, int(RP.nSamples-ind))
+            window = torch.cat((windowLeft, windowRight), 0)
+            print(window)
+            full_window.append(window)
+
+        return torch.stack(full_window)
+
+    # Need to rewrite this guy ok.
+    def softBeamformer(self, RP):
+        #print(self.window.shape)
+        #print(self.window)
+        posVecList = []
+        for i in range(0, RP.numProj):
+            posVecList.append(RP.projDataArray[i].projPos)
+        posVec = torch.stack(posVecList)
+
+        projWfmList = []
+        for i in range(0, RP.numProj):
+            projWfmList.append(RP.projDataArray[i].wfmRC.vector())
+        wfmData = torch.stack(projWfmList)
+
+        intensityReal = []
+        intensityImag = []
+
+        pixGridReal = []
+        pixGridImag = []
+
+        x = torch.ones(self.numPix, 2)
+        z = (torch.ones(self.numPix) * torch.tensor(RP.zs[0])) ** 2
+
+        for i in range(0, RP.numProj):
+            posVec_pix = x * posVec[i, :]
+            sum = torch.sum((self.pixPos - posVec_pix) ** 2, 1) + z
+            tofs = 2 * torch.sqrt(sum)
+
+            tof_ind = int((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs))
+
+
+
+
+
+        #self.scene = Complex(real=, imag=)
+        #return self.scene
+    """
     def beamformTest(self, RP):
         numProj = len(RP.projDataArray)
         posVecList = []
