@@ -11,7 +11,7 @@ class RenderParameters:
         # self.tDur = torch.tensor([kwargs.get('tDur', .02)], requires_grad=True)
         self.Fs = kwargs.get('Fs', 100000) * 1.0
         self.tDur = kwargs.get('tDur', .04)
-        self.nSamples = self.Fs * self.tDur
+        self.nSamples = int(self.Fs * self.tDur)
 
         # Will be used to create torch constant, not differentiable at this time
         self.fStart = kwargs.get('fStart', 30000)  # Chirp start frequency

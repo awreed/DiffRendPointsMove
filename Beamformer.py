@@ -48,6 +48,56 @@ class Beamformer:
             self.pixPos = torch.from_numpy(pixPos).cuda()
             self.pixPos.requires_grad = True
 
+    def windowIndex(self, RP, ind):
+        windowLeft = torch.linspace(0, ind, ind)
+        windowRight = torch.linspace(ind, int(RP.nSamples-1), int(RP.nSamples-ind))
+        window = torch.cat((windowLeft, windowRight), 0)
+        return window
+
+    # Need to rewrite this guy ok.
+    def softBeamformer(self, RP):
+        posVecList = []
+        for i in range(0, RP.numProj):
+            posVecList.append(RP.projDataArray[i].projPos)
+        posVec = torch.stack(posVecList)
+
+        projWfmList = []
+        for i in range(0, RP.numProj):
+            projWfmList.append(RP.projDataArray[i].wfmRC.vector())
+        wfmData = torch.stack(projWfmList)
+
+        intensityReal = []
+        intensityImag = []
+
+        pixGridReal = []
+        pixGridImag = []
+
+        for i in range(0, RP.numProj):
+            for j in range(0, self.numPix):
+                t = torch.sqrt(torch.sum((posVec[i] - self.pixPos[j, :])**2) + torch.tensor(RP.zs[0])**2)
+                tof = (2*t)/(RP.c) * RP.Fs
+                w = self.windowIndex(RP, int(tof))
+                realIntensity = torch.sum(wfmData[i, :, 0]*w)
+                imagIntensity = torch.sum(wfmData[i, :, 1]*w)
+
+                intensityReal.append(realIntensity)
+                intensityImag.append(imagIntensity)
+
+            pixGridReal.append(torch.stack(intensityReal))
+            pixGridImag.append(torch.stack(intensityImag))
+            intensityReal = []
+            intensityImag = []
+
+        pixGridRealTensor = torch.stack(pixGridReal)
+        pixGridImagTensor = torch.stack(pixGridImag)
+
+        realSum = torch.sum(pixGridRealTensor, 0)
+        imagSum = torch.sum(pixGridImagTensor, 0)
+
+
+        self.scene = Complex(real=realSum, imag=imagSum)
+        return self.scene
+
     def beamformTest(self, RP):
         numProj = len(RP.projDataArray)
         posVecList = []
@@ -67,7 +117,7 @@ class Beamformer:
         x = torch.ones(self.numPix, 2)
         z = (torch.ones(self.numPix) * torch.tensor(RP.zs[0])) ** 2
         width = -1 * torch.ones(self.numPix, dtype=torch.float64)
-        ws = 101
+        ws = 11
         # Weights for window function when indexing waveforms
         weights = torch.DoubleTensor(gauss(ws)).view(-1, 1).cuda()
         for i in range(0, RP.numProj):

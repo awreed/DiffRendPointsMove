@@ -83,7 +83,7 @@ if __name__ == '__main__':
 
         #loss = torch.sum(torch.sqrt((EST_BF - GT_BF)**2))
 
-        loss = wass_loss(EST_BF, BF.pixPos[:, 0:2], GT_BF, BF.pixPos[:, 0:2])
+        #loss = wass_loss(EST_BF, BF.pixPos[:, 0:2], GT_BF, BF.pixPos[:, 0:2])
 
         loss.backward()
         optimizer.step()
