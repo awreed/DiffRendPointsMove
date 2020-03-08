@@ -3,7 +3,7 @@ import math
 from scipy.signal import hilbert
 import torch
 from utils import *
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
 import cmath
 import matplotlib.pyplot as plt
 
@@ -11,22 +11,39 @@ import matplotlib.pyplot as plt
 # 0 error in unit test
 def torchTimeDelay(RP, tau):
     #  Delay a signal in time
-    df = RP.Fs / torch.tensor([len(RP.transmitSignal) * 1.0], requires_grad=False)
+    df = RP.Fs / len(RP.transmitSignal)
     #print(fs)
     f_ind = torch.linspace(0, len(RP.transmitSignal) - 1, steps=len(RP.transmitSignal))
-    f = f_ind * df.item()
+    f = f_ind * df
     f[f > (RP.Fs / 2)] -= RP.Fs
 
-    arg = 2*torch.tensor([math.pi])*tau*f
-    #h = arg.register_hook(lambda z: print(torch.sum(z)))
-    #RP.hooks.append(h)
+    w = (2 * math.pi * f).to(RP.dev)
+    arg = w*tau
 
-    sign = torch.tensor([-1.0], requires_grad=True)
-    pr = compExp(arg, sign)
-    X = torch.fft(torchHilbert(RP.transmitSignal), 1)
+    #try:
+    #    h = tau.register_hook(lambda x: print("tau_in " + str(x.device) + str(x.data)))
+    #    RP.hooks.append(h)
+    #except:
+    #    pass
+
+    #try:
+    #    h = arg.register_hook(lambda x: print("arg " + str(x.device) + str(x.data)))
+    #    RP.hooks.append(h)
+    #except:
+    #    pass
+
+    sign = -1.0
+    pr = compExp(arg, sign).to(RP.dev)
+    #try:
+    #    h = pr.register_hook(lambda x: print("pr " + str(x.device) + str(x.data)))
+    #    RP.hooks.append(h)
+    #except:
+    #    pass
+    X = torch.fft(torchHilbert(RP.transmitSignal, RP), 1)
+
     tsd = torch.ifft(compMul(X, pr), 1)[:, 0]  # Only return the real values
 
-    return tsd.cuda()
+    return tsd
 
 
 def timeDelay(x, fs, tau):

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 def DRC_Isaac_Vectorized(img, med, des_med):
     free_parameter = (des_med - med * des_med)/(med - med * des_med)
@@ -69,28 +69,30 @@ def xcorr(t1, t2):
 
 # https://stackoverflow.com/questions/56380536/hilbert-transform-in-python
 # 0 error against Scipy and works with autograd
-def torchHilbert(u):
+def torchHilbert(u, RP):
     N = len(u)
+    dev = RP.dev
 
     # Take forward fourier transform
     U = torch.rfft(u, 1, onesided=False)
-    Mask = torch.zeros(N, requires_grad=True)
+    Mask = torch.zeros(N, requires_grad=False)
 
     if N % 2 == 0:
-        DC = torch.tensor([1], requires_grad=True, dtype=torch.float64)
-        DC1 = torch.tensor([1], requires_grad=True, dtype=torch.float64)
-        maskLeft = torch.ones((N // 2 - 1), requires_grad=True, dtype=torch.float64)
+        DC = torch.tensor([1], requires_grad=False, dtype=torch.float64)
+        DC1 = torch.tensor([1], requires_grad=False, dtype=torch.float64)
+        maskLeft = torch.ones((N // 2 - 1), requires_grad=False, dtype=torch.float64)
         maskLeftUp = maskLeft * 2
-        maskRight = torch.zeros((N - (N // 2 - 1) - 2), requires_grad=True, dtype=torch.float64)
-        Mask = torch.cat((DC, maskLeftUp, DC1, maskRight), 0)
+        maskRight = torch.zeros((N - (N // 2 - 1) - 2), requires_grad=False, dtype=torch.float64)
+        Mask = torch.cat((DC, maskLeftUp, DC1, maskRight), 0).to(dev)
     else:
-        DC = torch.tensor([1], requires_grad=True, dtype=torch.float64)
-        maskLeft = torch.ones(((N + 1) // 2 - 1), requires_grad=True, dtype=torch.float64)
+        DC = torch.tensor([1], requires_grad=False, dtype=torch.float64)
+        maskLeft = torch.ones(((N + 1) // 2 - 1), requires_grad=False, dtype=torch.float64)
         maskLeftUp = maskLeft * 2
-        maskRight = torch.zeros((N - ((N + 1) // 2 - 1) - 1), requires_grad=True, dtype=torch.float64)
-        Mask = torch.cat((DC, maskLeftUp, maskRight), 0)
+        maskRight = torch.zeros((N - ((N + 1) // 2 - 1) - 1), requires_grad=False, dtype=torch.float64)
+        Mask = torch.cat((DC, maskLeftUp, maskRight), 0).to(dev)
 
     # Zero out negative frequency components
+
 
     real = torch.mul(U[:, 0], Mask)
     imag = torch.mul(U[:, 1], Mask)

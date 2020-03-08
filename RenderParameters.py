@@ -10,8 +10,10 @@ class RenderParameters:
         # self.Fs = torch.tensor([kwargs.get('Fs', 100000)], requires_grad=True)
         # self.tDur = torch.tensor([kwargs.get('tDur', .02)], requires_grad=True)
         self.Fs = kwargs.get('Fs', 100000) * 1.0
-        self.tDur = kwargs.get('tDur', .04)
+        self.tDur = kwargs.get('tDur', .02)
         self.nSamples = int(self.Fs * self.tDur)
+
+        self.dev = kwargs.get('device', None)
 
         # Will be used to create torch constant, not differentiable at this time
         self.fStart = kwargs.get('fStart', 30000)  # Chirp start frequency
@@ -76,11 +78,12 @@ class RenderParameters:
         sig[ind1:ind2] = LFM  # Insert chirp into receive signal
 
         # Convert transmit signal to tensor
-        self.transmitSignal = torch.from_numpy(sig).cuda()
+        #print(self.dev)
+        self.transmitSignal = torch.from_numpy(sig).to(self.dev)
         self.transmitSignal.requires_grad = False
 
-        self.pulse = torchHilbert(self.transmitSignal)
-        self.Pulse = torch.fft(self.pulse, 1).cuda()
+        self.pulse = torchHilbert(self.transmitSignal, self)
+        self.Pulse = torch.fft(self.pulse, 1).to(self.dev)
 
     def defineProjectorPosGrid(self, **kwargs):
         self.xStart = kwargs.get('xStart', -1)
@@ -110,7 +113,7 @@ class RenderParameters:
             for j in range(0, self.numYs):
                 projectors[count, :] = [self.xs[i], self.ys[j]]
                 count = count + 1
-        self.projectors = torch.from_numpy(projectors).cuda()
+        self.projectors = torch.from_numpy(projectors).to(self.dev)
         self.projectors.requires_grad = False
 
     def freeHooks(self, **kwargs):
@@ -156,6 +159,6 @@ class RenderParameters:
                     #projectors[count, :] = [self.rs[j] * math.cos(np.deg2rad(self.thetas[i])),
                                             #self.rs[j] * math.sin(np.deg2rad(self.thetas[i])), self.zs[k]]
                     #count = count + 1
-        self.projectors = torch.from_numpy(projectors).cuda()
-        self.projectors.requires_grad = True
+        self.projectors = torch.from_numpy(projectors).to(self.dev)
+        self.projectors.requires_grad = False
 

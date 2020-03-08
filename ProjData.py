@@ -3,7 +3,7 @@ from scipy.signal import correlate
 from scipy.signal import hilbert
 import torch
 from utils import *
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
 from Complex import *
 
 class ProjData:
@@ -35,12 +35,12 @@ class ProjData:
 
 
         # Forward fourier transform of received waveform
-        DataHil = torchHilbert(self.wfm)
+        DataHil = torchHilbert(self.wfm, RP)
         Data = torch.fft(DataHil, 1)
 
         # Definition of cross-correlation
         yRC = torch.ifft(compMul(Data, compConj(Pulse)), 1)
-        self.wfmRC = Complex(real=yRC[:, 0].cuda(), imag=yRC[:, 1].cuda())
+        self.wfmRC = Complex(real=yRC[:, 0].to(RP.dev), imag=yRC[:, 1].to(RP.dev))
         self.normWfmRC = self.wfmRC.abs()/torch.norm(self.wfmRC.abs(), p=1.0)
 
 
