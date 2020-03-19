@@ -7,7 +7,8 @@ from joblib import Parallel, delayed
 import multiprocessing
 import torch
 from utils import *
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
 import time
 from Complex import *
 
@@ -18,11 +19,17 @@ class Beamformer:
         self.sceneDimY = kwargs.get('sceneDimY', np.array([-.15, .15]))
         self.sceneDimZ = kwargs.get('sceneDimZ', np.array([-.15, .15]))
 
+        self.RP = kwargs.get('RP', None)
+
+        self.dev = self.RP.dev
+
         self.nPix = kwargs.get('nPix', np.array([128, 128, 64]))
 
         self.xVect = np.linspace(self.sceneDimX[0], self.sceneDimX[1], self.nPix[0])
         self.yVect = np.linspace(self.sceneDimY[0], self.sceneDimY[1], self.nPix[1])
         self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.nPix[2])
+
+        self.window = self.windowIndex(self.RP)
 
         self.dim = kwargs.get('dim', 3)
 
@@ -35,7 +42,7 @@ class Beamformer:
             pixPos = np.hstack(
                 (np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
             # Convert pixel positions to tensor
-            self.pixPos = torch.from_numpy(pixPos).cuda()
+            self.pixPos = torch.from_numpy(pixPos).to(self.dev)
             self.pixPos.requires_grad = True
         else:
             self.numPix = np.size(self.xVect) * np.size(self.yVect)
@@ -44,10 +51,127 @@ class Beamformer:
             pixPos = np.hstack(
                 (np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1))))
             # Convert pixel positions to tensor
-            self.pixPos = torch.from_numpy(pixPos).cuda()
+            self.pixPos = torch.from_numpy(pixPos).to(self.dev)
             self.pixPos.requires_grad = True
 
-    def beamformTest(self, RP):
+    """
+    def windowIndex(self, RP, ind):
+        windowLeft = torch.linspace(0, 1, ind)
+        windowRight = torch.linspace(1, 0, int(RP.nSamples - ind))
+        window = torch.cat((windowLeft, windowRight), 0)
+        return window
+
+        # Need to rewrite this guy ok.
+
+    def softBeamformer(self, RP):
+        posVecList = []
+        for i in range(0, RP.numProj):
+            posVecList.append(RP.projDataArray[i].projPos)
+        posVec = torch.stack(posVecList)
+
+        projWfmList = []
+        for i in range(0, RP.numProj):
+            projWfmList.append(RP.projDataArray[i].wfmRC.vector())
+        wfmData = torch.stack(projWfmList)
+
+        intensityReal = []
+        intensityImag = []
+
+        pixGridReal = []
+        pixGridImag = []
+
+        for i in range(0, RP.numProj):
+            for j in range(0, self.numPix):
+                t = torch.sqrt(torch.sum((posVec[i] - self.pixPos[j, :]) ** 2) + torch.tensor(RP.zs[0]) ** 2)
+                tof = (2 * t) / (RP.c) * RP.Fs
+                w = self.windowIndex(RP, int(tof))
+                realIntensity = torch.sum(wfmData[i, :, 0] * w)
+                imagIntensity = torch.sum(wfmData[i, :, 1] * w)
+
+                intensityReal.append(realIntensity)
+                intensityImag.append(imagIntensity)
+
+            pixGridReal.append(torch.stack(intensityReal))
+            pixGridImag.append(torch.stack(intensityImag))
+            intensityReal = []
+            intensityImag = []
+
+        pixGridRealTensor = torch.stack(pixGridReal)
+        pixGridImagTensor = torch.stack(pixGridImag)
+
+        realSum = torch.sum(pixGridRealTensor, 0)
+        imagSum = torch.sum(pixGridImagTensor, 0)
+
+        self.scene = Complex(real=realSum, imag=imagSum)
+        return self.scene
+    """
+    # Pre-compute matrix of soft index values for
+    def windowIndex(self, RP):
+        full_window = []
+        for ind in range(0, RP.nSamples):
+            windowLeft = torch.linspace(0, 1, ind)
+            windowRight = torch.linspace(1, 0, int(RP.nSamples-ind))
+            window = torch.cat((windowLeft, windowRight), 0)
+            full_window.append(window)
+
+        return torch.stack(full_window).to(RP.dev)
+
+    # Need to rewrite this guy ok.
+    def softBeamformer(self, RP):
+        posVecList = []
+        for i in range(0, RP.numProj):
+            posVecList.append(RP.projDataArray[i].projPos)
+        posVec = torch.stack(posVecList).to(RP.dev)
+
+        projWfmList = []
+        for i in range(0, RP.numProj):
+            projWfmList.append(RP.projDataArray[i].wfmRC.vector())
+        wfmData = torch.stack(projWfmList).to(RP.dev)
+
+        #try:
+        #    h = wfmData.register_hook(lambda x: print("wfmData " + str(x.data)))
+        #    RP.hooks.append(h)
+        #except RuntimeError:
+        #    pass
+
+        intensityReal = []
+        intensityImag = []
+
+        pixGridReal = []
+        pixGridImag = []
+
+        x = torch.ones(self.numPix, 2).to(RP.dev)
+        z = ((torch.ones(self.numPix) * torch.tensor(RP.zs[0])) ** 2).to(RP.dev)
+        for i in range(0, RP.numProj):
+            posVec_pix = x * posVec[i, :]
+            sum = torch.sum((self.pixPos - posVec_pix) ** 2, 1) + z
+            tofs = 2 * torch.sqrt(sum)
+
+            tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
+
+
+            #Grab index by multiplying by window.
+            real = torch.sum(wfmData[i, :, 0] * self.window[tof_ind, :], dim=1)
+            imag = torch.sum(wfmData[i, :, 1] * self.window[tof_ind, :], dim=1)
+
+
+
+            pixGridReal.append(real)
+            pixGridImag.append(imag)
+        real_full = torch.sum(torch.stack(pixGridReal), 0)
+        imag_full = torch.sum(torch.stack(pixGridImag), 0)
+        #try:
+        #    h = real_full.register_hook(lambda x: print("real_full " + str(x.device)))
+        #except:
+        #    pass
+
+        self.scene = Complex(real=real_full, imag=imag_full)
+        return self.scene
+
+        #self.scene = Complex(real=, imag=)
+        #return self.scene
+
+"""   def beamformTest(self, RP):
         numProj = len(RP.projDataArray)
         posVecList = []
         for i in range(0, numProj):
@@ -58,42 +182,63 @@ class Beamformer:
         for i in range(0, numProj):
             projWfmList.append(RP.projDataArray[i].wfmRC.vector())
         wfmData = torch.stack(projWfmList)
-       #h = wfmData.register_hook(lambda x: print("wfmData" + str(x[:, :, 0].nonzero().data)))
-       # RP.hooks.append(h)
 
         pixGridReal = []
         pixGridImag = []
 
         # Much faster now that I loop over projectors rather than pixels
         x = torch.ones(self.numPix, 2)
-        z = (torch.ones(self.numPix) * torch.tensor(RP.zs[0]))**2
-
-
+        z = (torch.ones(self.numPix) * torch.tensor(RP.zs[0])) ** 2
+        width = -1 * torch.ones(self.numPix, dtype=torch.float64)
+        ws = 11
+        # Weights for window function when indexing waveforms
+        weights = torch.DoubleTensor(gauss(ws)).view(-1, 1).to(self.dev)
         for i in range(0, RP.numProj):
             posVec_pix = x * posVec[i, :]
-            sum = torch.sum((self.pixPos - posVec_pix)**2, 1)
-            #print(sum)
+            sum = torch.sum((self.pixPos - posVec_pix) ** 2, 1)
             tot_sum = sum + z
             tofs = 2 * torch.sqrt(tot_sum)
-            #tofs = 2 * torch.sqrt(torch.sum(torch.sum((self.pixPos - posVec_pix)**2, 1), (z*torch.tensor([RP.zs[0]]))**2, 1))
-            tof_ind = torch.round((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).long()
-            #print(tof_ind)
+            tof_ind = (tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)
 
-            pixGridReal.append(wfmData[i, tof_ind.detach(), 0])
-            pixGridImag.append(wfmData[i, tof_ind.detach(), 1])
+            # Normalize tof indices between [-1, 1]
+            norm_tof_ind = 2 * (tof_ind / RP.nSamples) - 1
+            tof_tmp = torch.stack((width, norm_tof_ind), 1).view(1, -1, 1, 2)
 
-        #self.scene = torch.stack(((torch.sum(torch.stack(pixGridReal), 0)), torch.sum(torch.stack(pixGridImag), 0)), dim=1)
+            # Process window around each index to account for area of each pixel
+            real = wfmData[i, :, 0]
+            reshape_real = real.view(1, 1, -1, 1)
+            # Get window of points around each point in waveform
+            unfold_real = torch.nn.functional.unfold(reshape_real, kernel_size=(ws, 1)).squeeze()
+            # Multiply gaussian window by window of points in waveform
+            unfold_real_window = (unfold_real * weights).view(1, ws, -1, 1)
+
+            # Do the same for the imaginary channel
+            imag = wfmData[i, :, 1]
+            reshape_imag = imag.view(1, 1, -1, 1)
+            unfold_imag = torch.nn.functional.unfold(reshape_imag, kernel_size=(ws, 1)).squeeze()
+            unfold_imag_window = (unfold_imag * weights).view(1, ws, -1, 1)
+
+            # Sample waveform at tof ind (Batch dimension holds window of points)
+            sample_real = torch.nn.functional.grid_sample(unfold_real_window, tof_tmp, align_corners=False)
+            sample_imag = torch.nn.functional.grid_sample(unfold_imag_window, tof_tmp, align_corners=False)
+
+            # Sum across the window dimension
+            sum_real = torch.sum(sample_real.squeeze(), 0)
+            sum_imag = torch.sum(sample_imag.squeeze(), 0)
+
+            # Save pixel matrix of contributions from projector "i"
+            pixGridReal.append(sum_real)
+            pixGridImag.append(sum_imag)
+
         self.scene = Complex(real=torch.sum(torch.stack(pixGridReal), 0), imag=torch.sum(torch.stack(pixGridImag), 0))
-        #h = self.scene.register_hook(lambda x: print("scene" + str(x)))
-        #RP.hooks.append(h)
         return self.scene
 
     def beamform(self, RP):
         numProj = len(RP.projDataArray)
 
         # Define a vector containing the 3D position of each projector
-        #posVec = torch.empty((numProj, 3))
-        #for i in range(0, numProj):
+        # posVec = torch.empty((numProj, 3))
+        # for i in range(0, numProj):
         #    posVec.data[i, :] = RP.projDataArray[i].projPos
         posVecList = []
         for i in range(0, numProj):
@@ -103,52 +248,54 @@ class Beamformer:
         # Define a vector containing the 3D position of each pixel
         numPix = np.size(self.xVect) * np.size(self.yVect) * np.size(self.zVect)
         (x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
-        pixPos = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
+        pixPos = np.hstack(
+            (np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
         # Convert pixel positions to tensor
         pixPos = torch.from_numpy(pixPos)
         # Pack all RC waveforms into matrix
-        #wfmData = torch.empty((numProj, int(RP.nSamples), 2), requires_grad=False)
-        #for i in range(0, numProj):
+        # wfmData = torch.empty((numProj, int(RP.nSamples), 2), requires_grad=False)
+        # for i in range(0, numProj):
         #    wfmData[i, :, :] = RP.projDataArray[i].wfmRC
         projWfmList = []
         for i in range(0, numProj):
             projWfmList.append(RP.projDataArray[i].wfmRC)
         wfmData = torch.stack(projWfmList)
-       # print(wfmData.shape)
-        #wfmData = np.ndarray.flatten(wfmData)
+        # print(wfmData.shape)
+        # wfmData = np.ndarray.flatten(wfmData)
 
         # Array to store intensity at each pixel
 
         pixIntensityReal = []
         pixIntensityImag = []
 
-        #for i in range(0, 1):
+        # for i in range(0, 1):
         pixel = pixPos[0, :] * torch.ones((numProj, 3))
-        tofs = 2 * torch.sqrt(torch.sum((posVec - pixel)**2, 1))
-        #print(tofs.shape)
-        tof_ind = torch.round((tofs/torch.tensor(RP.c))*torch.tensor(RP.Fs)).long()
+        tofs = 2 * torch.sqrt(torch.sum((posVec - pixel) ** 2, 1))
+        # print(tofs.shape)
+        tof_ind = torch.round((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).long()
 
-        #print(tof_ind.shape)
-        #print(RP.projDataArray[0].wfmRC.shape)
+        # print(tof_ind.shape)
+        # print(RP.projDataArray[0].wfmRC.shape)
 
         real = torch.sum(wfmData[:, :, 0].gather(1, tof_ind.view(-1, 1)))
         imag = torch.sum(wfmData[:, :, 1].gather(1, tof_ind.view(-1, 1)))
 
-            #pixIntensityReal.append(torch.sum(wfmData[:, :, 0].gather(1, tof_ind.view(-1, 1))))
-            #pixIntensityImag.append(torch.sum(wfmData[:, :, 1].gather(1, tof_ind.view(-1, 1))))
+        # pixIntensityReal.append(torch.sum(wfmData[:, :, 0].gather(1, tof_ind.view(-1, 1))))
+        # pixIntensityImag.append(torch.sum(wfmData[:, :, 1].gather(1, tof_ind.view(-1, 1))))
         sescene = torch.stack((real, imag)).unsqueeze(0)
         print(self.scene.shape)
         # Save the aggregated pixel intensity for each pixel
-        #self.scene = torch.stack((torch.stack(pixIntensityReal), torch.stack(pixIntensityImag)), 1)
-        #self.scene = torch.zeros((numPix, 4), dtype=torch.float64)
+        # self.scene = torch.stack((torch.stack(pixIntensityReal), torch.stack(pixIntensityImag)), 1)
+        # self.scene = torch.zeros((numPix, 4), dtype=torch.float64)
         self.pixelGrid = pixPos
-        #self.scene[:, 3] = compABS(self.pixIntensity)
+        # self.scene[:, 3] = compABS(self.pixIntensity)
 
     def displayScene(self):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
-        ax.scatter(self.scene[:, 0].detach().numpy(), self.scene[:, 1].detach().numpy(), self.scene[:, 2].detach().numpy(),
+        ax.scatter(self.scene[:, 0].detach().numpy(), self.scene[:, 1].detach().numpy(),
+                   self.scene[:, 2].detach().numpy(),
                    c=self.scene[:, 3].detach().numpy())
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
@@ -159,3 +306,4 @@ class Beamformer:
 
         plt.pause(.05)
         plt.show()
+"""

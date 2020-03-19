@@ -10,8 +10,10 @@ class RenderParameters:
         # self.Fs = torch.tensor([kwargs.get('Fs', 100000)], requires_grad=True)
         # self.tDur = torch.tensor([kwargs.get('tDur', .02)], requires_grad=True)
         self.Fs = kwargs.get('Fs', 100000) * 1.0
-        self.tDur = kwargs.get('tDur', .04)
-        self.nSamples = self.Fs * self.tDur
+        self.tDur = kwargs.get('tDur', .02)
+        self.nSamples = int(self.Fs * self.tDur)
+
+        self.dev = kwargs.get('device', None)
 
         # Will be used to create torch constant, not differentiable at this time
         self.fStart = kwargs.get('fStart', 30000)  # Chirp start frequency
@@ -22,6 +24,8 @@ class RenderParameters:
         self.c = kwargs.get('c', 343.0)
 
         self.transmitSignal = None  # Transmitted signal (Set to torch type)
+        self.pulse = None  # Hilbert transform of the transmitted signal
+        self.Pulse = None  # FFT of the hilbert transform of transmitted signal
         self.scene = None  # Stores the processed .obj file
         self.thetaStart = None  # Projector start angle in degrees
         self.thetaStop = None  # Projector stop angle in degrees
@@ -61,8 +65,10 @@ class RenderParameters:
     def generateTransmitSignal(self):
         fs = cvtNP(self.Fs)
         tDur = cvtNP(self.tDur)
+        #print(fs)
 
         sig = np.zeros(int(fs * tDur))  # Allocate entire receive signal
+        #sig[0] = 1
         times = np.linspace(self.tStart, self.tStop - 1 / fs, num=int((self.tStop - self.tStart) * fs))
         LFM = scipy.signal.chirp(times, self.fStart, self.tStop, self.fStop)  # Generate LFM chirp
         window = scipy.signal.tukey(len(LFM), self.winRatio)
@@ -72,8 +78,12 @@ class RenderParameters:
         sig[ind1:ind2] = LFM  # Insert chirp into receive signal
 
         # Convert transmit signal to tensor
-        self.transmitSignal = torch.from_numpy(sig).cuda()
+        #print(self.dev)
+        self.transmitSignal = torch.from_numpy(sig).to(self.dev)
         self.transmitSignal.requires_grad = False
+
+        self.pulse = torchHilbert(self.transmitSignal, self)
+        self.Pulse = torch.fft(self.pulse, 1).to(self.dev)
 
     def defineProjectorPosGrid(self, **kwargs):
         self.xStart = kwargs.get('xStart', -1)
@@ -103,7 +113,7 @@ class RenderParameters:
             for j in range(0, self.numYs):
                 projectors[count, :] = [self.xs[i], self.ys[j]]
                 count = count + 1
-        self.projectors = torch.from_numpy(projectors).cuda()
+        self.projectors = torch.from_numpy(projectors).to(self.dev)
         self.projectors.requires_grad = False
 
     def freeHooks(self, **kwargs):
@@ -111,9 +121,6 @@ class RenderParameters:
         for i in range(0, N):
             tmp = self.hooks[i]
             tmp.remove()
-
-
-
 
     def defineProjectorPos(self, **kwargs):
         self.thetaStart = kwargs.get('thetaStart', 0)
@@ -152,6 +159,6 @@ class RenderParameters:
                     #projectors[count, :] = [self.rs[j] * math.cos(np.deg2rad(self.thetas[i])),
                                             #self.rs[j] * math.sin(np.deg2rad(self.thetas[i])), self.zs[k]]
                     #count = count + 1
-        self.projectors = torch.from_numpy(projectors).cuda()
-        self.projectors.requires_grad = True
+        self.projectors = torch.from_numpy(projectors).to(self.dev)
+        self.projectors.requires_grad = False
 

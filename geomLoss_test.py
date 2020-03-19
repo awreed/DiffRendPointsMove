@@ -19,6 +19,7 @@ import time
 import torch
 from geomloss import SamplesLoss
 import matplotlib.pyplot as plt
+import visdom
 import pykeops
 #pykeops.verbose = True
 #pykeops.build_type = 'Debug'
@@ -61,25 +62,16 @@ def display_samples(ax, x, color):
 
 N, M = (50, 50) if not use_cuda else (100, 100)
 
+numEl = 1000
 
-t_i = torch.zeros(100).type(dtype)
-t_j = torch.zeros(100).type(dtype)
+torch.manual_seed(7)
+torch.cuda.manual_seed_all(7)
+t_i = torch.zeros(numEl).type(dtype)
+t_j = torch.zeros(numEl).type(dtype)
 
 
-t_i[50] = 0.9
-t_i[51] = 0.9
-t_i[52] = 0.9
-t_i[53] = 0.9
-t_i[54] = 0.9
-t_i[55] = 0.9
-
-t_j[2] = 0.9
-t_j[20] = 0.9
-t_j[30] = 0.9
-t_j[70] = 0.9
-t_j[80] = 0.9
-t_j[98] = 0.9
-
+t_i[800:802] = 0.5
+t_j[100] = 1.0
 
 t_i = t_i/torch.norm(t_i, p=1)
 t_j = t_j/torch.norm(t_j, p=1)
@@ -104,7 +96,13 @@ Y_j = t_j
 # and as a "model-free" machine learning program, where
 # we optimize directly on the samples' locations.
 
-def gradient_flow(loss, lr=.1):
+vis = visdom.Visdom()
+loss_window = vis.line(
+    Y=torch.zeros((1)).cpu(),
+    X=torch.zeros((1)).cpu(),
+    opts=dict(xlabel='epoch', ylabel='Loss', title='Wass-1 Loss', legend=['Loss']))
+
+def gradient_flow(loss, lr=.01):
     """Flows along the gradient of the cost function, using a simple Euler scheme.
 
     Parameters:
@@ -124,8 +122,9 @@ def gradient_flow(loss, lr=.1):
     # We're going to perform gradient descent on Loss(α, β)
     # wrt. the positions x_i of the diracs masses that make up α:
     #x_i.requires_grad = True
-    yLoc = torch.linspace(0, 1, 100).view(-1, 1).cuda()
-    xLoc = torch.linspace(0, 1, 100).view(-1, 1).cuda()
+    yLoc = torch.linspace(0, 1, numEl).view(-1, 1).cuda()
+    xLoc = torch.linspace(0, 1, numEl).view(-1, 1).cuda()
+
     #mean = (x_i.view(-1, 1) * xLoc).sum(dim=0)
     #xLoc -= mean
     #std = (x_i.view(-1) * (xLoc**2).sum(dim=1).view(-1)).sum().sqrt()
@@ -146,15 +145,16 @@ def gradient_flow(loss, lr=.1):
 
     t_0 = time.time()
     #plt.figure(figsize=(12,8)) ; k = 1
-    print(Nsteps)
     fig, axes = plt.subplots(1, 2)
-    for i in range(Nsteps):  # Euler scheme ===============
+    for i in range(1000):  # Euler scheme ===============
         # Compute cost and gradient
 
         L_αβ = loss(x_i, z, y_j, yLoc)
         [g] = torch.autograd.grad(L_αβ, [z])
+        print()
 
         z.data -= lr*g
+        vis.line(X=torch.ones((1)).cpu() * i, Y=L_αβ.unsqueeze(0).cpu(), win=loss_window, update='append')
         axes[0].stem(z.detach().cpu().numpy(), x_i.detach().cpu().numpy(), use_line_collection=True)
         axes[1].stem(yLoc.detach().cpu().numpy(), y_j.detach().cpu().numpy(), use_line_collection=True)
         plt.pause(0.05)
@@ -234,7 +234,7 @@ def gradient_flow(loss, lr=.1):
 # And the Earth-Mover's (Wassertein-1) distance:
 #
 
-gradient_flow(SamplesLoss("sinkhorn", p=1, blur=.01, diameter=1.0))
+gradient_flow(SamplesLoss("sinkhorn", p=1, blur=.01, diameter=1.0, scaling=0.1))
 
 ###############################################
 # Wasserstein-2 distance
