@@ -67,7 +67,7 @@ if __name__ == '__main__':
         RP_GT.defineProjectorPos(thetaStart=thetaStart, thetaStop=thetaStop, thetaStep=thetaStep, rStart=rStart,
                                  rStop=rStop, zStart=zStart, zStop=zStop)
         #ps_GT = torch.tensor([[-.3, -.3], [.3, -.3]], requires_grad=False).to(dev)
-        simulateWaveformsBatched(RP_GT, ps_GT)
+        simulateWaveformsBatched(RP_GT, ps_GT, propLoss=True)
         #simulateSASWaveformsPointSource(RP_GT, ps_GT, gt=False)
         print(RP_GT.numProj)
 
@@ -78,7 +78,8 @@ if __name__ == '__main__':
         #GT = BF_GT.softBeamformer(RP_GT).abs().to(dev_1)
         GT_hard = BF_GT.softBeamformer(RP_GT, BI=range(0, RP_GT.numProj), soft=False).abs().to(dev_1)
         GT_XY = GT_hard.view(x_vals, y_vals)
-        plt.imshow(GT_XY.detach().cpu().numpy())
+        #plt.imshow(GT_XY.detach().cpu().numpy())
+        plt.stem(RP_GT.projDataArray[0].wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
         plt.savefig("pics1/GT.png")
 
         RP_EST = RenderParameters(device=dev_1)
@@ -107,7 +108,7 @@ if __name__ == '__main__':
 
     for i in range(0, epochs):
         batch = random.sample(range(0, RP_EST.numProj - 1), BS)
-        simulateWaveformsBatched(RP_EST, ps_est, batch)
+        simulateWaveformsBatched(RP_EST, ps_est, batch, propLoss=True)
         #simulateSASWaveformsPointSource(RP_EST, ps_est)
 
         est = BF_EST.softBeamformer(RP_EST, BI=range(0, BS), soft=True).abs()
@@ -124,8 +125,6 @@ if __name__ == '__main__':
         loss = torch.sum(torch.sqrt((GT_norm - est_norm)**2))
         print(loss)
 
-        #print(ps_est)
-
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -133,8 +132,13 @@ if __name__ == '__main__':
 
         if i % 10 == 0:
             with torch.no_grad():
-                simulateWaveformsBatched(RP_EST, ps_est)
+                simulateWaveformsBatched(RP_EST, ps_est, propLoss=True)
                 est_hard = BF_EST.softBeamformer(RP_EST, BI=range(0, RP_EST.numProj), soft=False).abs()
+
+                #plt.show()
+                #plt.clf()
+                #plt.stem(RP_EST.projDataArray[0].wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
+                #plt.show()
                 est_xy = est_hard.view(x_vals, y_vals)
                 plt.imshow(est_xy.detach().cpu().numpy())
                 plt.savefig("pics1/est" + str(i) + ".png")

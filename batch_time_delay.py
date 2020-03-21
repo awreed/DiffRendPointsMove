@@ -9,22 +9,31 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
     shape = ps.shape
     numScat = list(shape)[0]
     RP.projDataArray = []
+    atten_window = (torch.linspace(1, 0, RP.nSamples)**2).to(RP.dev)
     if BI is None:
         for i in range(0, RP.numProj):
             pData = ProjData.ProjData(projPos=RP.projectors[i, :], Fs=RP.Fs, tDur=RP.tDur)
             dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1) + torch.tensor((RP.zs[0]**2), device=RP.dev).repeat(numScat))
             tau = (dist * 2) / RP.c
-            wfms = timeDelayBatched(RP, tau)
-            #print(wfms.shape)
+            if propLoss is True:
+                wfms = timeDelayBatched(RP, tau)*atten_window
+            else:
+                wfms = timeDelayBatched(RP, tau)
+
             pData.wfm = wfms
             pData.RCTorch(RP)
+            #plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
+            #plt.show()
             RP.projDataArray.append(pData)
     else:
         for index in BI:
             pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
             dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1) + torch.tensor((RP.zs[0]**2), device=RP.dev).repeat(numScat))
             tau = (dist * 2) / RP.c
-            wfms = timeDelayBatched(RP, tau)
+            if propLoss is True:
+                wfms = timeDelayBatched(RP, tau) * atten_window
+            else:
+                wfms = timeDelayBatched(RP, tau)
             pData.wfm = wfms
             pData.RCTorch(RP)
             RP.projDataArray.append(pData)
