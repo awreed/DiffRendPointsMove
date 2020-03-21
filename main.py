@@ -19,7 +19,7 @@ import collections
 from batch_time_delay import *
 import visdom
 
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 # Where you left, need to calc means of each projector waveform, figure out how to loop over all waveforms
 # and update the loss with breaking the graph
@@ -41,7 +41,7 @@ if __name__ == '__main__':
         RP_GT.generateTransmitSignal()
         RP_GT.defineProjectorPos(thetaStart=0, thetaStop=359, thetaStep=10, rStart=1, rStop=1, zStart=.3, zStop=.3)
         ps_GT = torch.tensor([[-.3, -.3], [.3, -.3]], requires_grad=False).to(dev)
-        simulateSASWaveformsPointSource(RP_GT, ps_GT)
+        simulateSASWaveformsPointSource(RP_GT, ps_GT, gt=True)
         print(RP_GT.numProj)
 
         # Beamformer to create images from projector wavef orms
@@ -60,6 +60,7 @@ if __name__ == '__main__':
         BF_EST = Beamformer(RP=RP_EST, sceneDimX=[-.4, .4], sceneDimY=[-.4, .4], sceneDimZ=[0, 0], nPix=[128, 128, 1], dim=2)
 
         ps_EST = torch.tensor([[.3, .3], [-.3, .3]], requires_grad=False).to(dev_1)
+        #ps_EST = torch.tensor([[-.2, -.2], [.2, -.2]], requires_grad=False).to(dev_1)
 
         vis = visdom.Visdom()
         loss_window = vis.line(
@@ -81,10 +82,13 @@ if __name__ == '__main__':
 
         est_xy = est.view(x_vals, y_vals)
         plt.imshow(est_xy.detach().cpu().numpy())
-        #plt.savefig("pics1/est" + str(i) + ".png")
-        plt.pause(.05)
+        plt.savefig("pics1/est" + str(i) + ".png")
+        #plt.pause(.05)
 
-        loss = torch.sum(torch.sqrt((GT - est)**2))
+        GT_norm = GT/torch.norm(GT, p=1)
+        est_norm = est/ torch.norm(est, p=1)
+
+        loss = torch.sum(torch.sqrt((GT_norm - est_norm)**2))
 
         print(ps_est)
 
