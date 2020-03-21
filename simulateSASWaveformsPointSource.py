@@ -46,10 +46,10 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None, gt=False):
 
             pData.RCTorch(RP)
 
-            if gt is False:
-                plt.clf()
-                plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
-                plt.show()
+            #if gt is False:
+            #    plt.clf()
+            #    plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
+            #    plt.show()
 
             RP.projDataArray.append(pData)
     else:
