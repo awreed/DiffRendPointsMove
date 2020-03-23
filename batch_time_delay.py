@@ -5,27 +5,35 @@ from utils import *
 from pytorch_complex_tensor import ComplexTensor
 import matplotlib.pyplot as plt
 
-def simulateWaveformsBatched(RP, ps, BI=None):
+def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
     shape = ps.shape
     numScat = list(shape)[0]
     RP.projDataArray = []
+    atten_window = (torch.linspace(1, 0, RP.nSamples)**2).to(RP.dev)
     if BI is None:
         for i in range(0, RP.numProj):
             pData = ProjData.ProjData(projPos=RP.projectors[i, :], Fs=RP.Fs, tDur=RP.tDur)
-            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :]) ** 2, 1) +
-                              (torch.tensor(RP.zs[0])**2).repeat(numScat))
+            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1) + torch.tensor((RP.zs[0]**2), device=RP.dev).repeat(numScat))
             tau = (dist * 2) / RP.c
-            wfms = timeDelayBatched(RP, tau)
+            if propLoss is True:
+                wfms = timeDelayBatched(RP, tau)*atten_window
+            else:
+                wfms = timeDelayBatched(RP, tau)
+
             pData.wfm = wfms
             pData.RCTorch(RP)
+            #plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
+            #plt.show()
             RP.projDataArray.append(pData)
     else:
         for index in BI:
             pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
-            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :]) ** 2, 1) +
-                              (torch.tensor(RP.zs[0])**2).repeat(numScat))
+            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1) + torch.tensor((RP.zs[0]**2), device=RP.dev).repeat(numScat))
             tau = (dist * 2) / RP.c
-            wfms = timeDelayBatched(RP, tau)
+            if propLoss is True:
+                wfms = timeDelayBatched(RP, tau) * atten_window
+            else:
+                wfms = timeDelayBatched(RP, tau)
             pData.wfm = wfms
             pData.RCTorch(RP)
             RP.projDataArray.append(pData)
@@ -41,10 +49,12 @@ def timeDelayBatched(RP, tau):
     f_ind = torch.linspace(0, len(RP.transmitSignal) - 1, steps=len(RP.transmitSignal), dtype=torch.float64)
     f = f_ind * df
     f[f > (RP.Fs / 2)] -= RP.Fs
-    arg = 2*math.pi*torch.mm(tau.unsqueeze(1), f.unsqueeze(0))  # tau = [t1, t2, t3] * f vector
+    w = (2 * math.pi * f).to(RP.dev)
+    arg = torch.mm(tau.unsqueeze(1), w.unsqueeze(0))
+    #arg = 2*math.pi*torch.mm(tau.unsqueeze(1), f.unsqueeze(0))  # tau = [t1, t2, t3] * f vector
     sign = -1.0
 
-    pr = compExp(arg, sign)
+    pr = compExp(arg, sign).to(RP.dev)
 
     # Complex multiply that works for batches. Should use GPU
     ac = torch.mul(RP.Pulse[:, 0], pr[:, :, 0])
@@ -53,10 +63,7 @@ def timeDelayBatched(RP, tau):
     ad = torch.mul(RP.Pulse[:, 0], pr[:, :, 1])
     mul = torch.stack((ac - bd, bc + ad), 2)
     tsd = torch.ifft(mul, 1)[:, :, 0]
-    return torch.sum(tsd, 0).cuda()
-
-
-
+    return torch.sum(tsd, 0)
 
 if __name__ == "__main__":
     RP = RenderParameters()

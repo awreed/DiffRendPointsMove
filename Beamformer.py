@@ -117,61 +117,47 @@ class Beamformer:
         return torch.stack(full_window).to(RP.dev)
 
     # Need to rewrite this guy ok.
-    def softBeamformer(self, RP):
+    def softBeamformer(self, RP, BI = None, soft=True):
         posVecList = []
-        for i in range(0, RP.numProj):
+        for i in BI:
             posVecList.append(RP.projDataArray[i].projPos)
         posVec = torch.stack(posVecList).to(RP.dev)
 
         projWfmList = []
-        for i in range(0, RP.numProj):
+        for i in BI:
             projWfmList.append(RP.projDataArray[i].wfmRC.vector())
         wfmData = torch.stack(projWfmList).to(RP.dev)
-
-        #try:
-        #    h = wfmData.register_hook(lambda x: print("wfmData " + str(x.data)))
-        #    RP.hooks.append(h)
-        #except RuntimeError:
-        #    pass
-
-        intensityReal = []
-        intensityImag = []
 
         pixGridReal = []
         pixGridImag = []
 
         x = torch.ones(self.numPix, 2).to(RP.dev)
         z = ((torch.ones(self.numPix) * torch.tensor(RP.zs[0])) ** 2).to(RP.dev)
-        for i in range(0, RP.numProj):
+        for i in range(0, len(BI)):
             posVec_pix = x * posVec[i, :]
             sum = torch.sum((self.pixPos - posVec_pix) ** 2, 1) + z
             tofs = 2 * torch.sqrt(sum)
 
             tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
-
-
-            #Grab index by multiplying by window.
-            real = torch.sum(wfmData[i, :, 0] * self.window[tof_ind, :], dim=1)
-            imag = torch.sum(wfmData[i, :, 1] * self.window[tof_ind, :], dim=1)
-
-
+            # Select index by multiplying by window.
+            if soft == True:
+                real = torch.sum(wfmData[i, :, 0] * self.window[tof_ind, :], dim=1)
+                imag = torch.sum(wfmData[i, :, 1] * self.window[tof_ind, :], dim=1)
+            # Select index directly, not differentiable
+            else:
+                real = wfmData[i, tof_ind, 0]
+                imag = wfmData[i, tof_ind, 1]
 
             pixGridReal.append(real)
             pixGridImag.append(imag)
         real_full = torch.sum(torch.stack(pixGridReal), 0)
         imag_full = torch.sum(torch.stack(pixGridImag), 0)
-        #try:
-        #    h = real_full.register_hook(lambda x: print("real_full " + str(x.device)))
-        #except:
-        #    pass
 
         self.scene = Complex(real=real_full, imag=imag_full)
         return self.scene
 
-        #self.scene = Complex(real=, imag=)
-        #return self.scene
-
-"""   def beamformTest(self, RP):
+"""
+   def beamformTest(self, RP):
         numProj = len(RP.projDataArray)
         posVecList = []
         for i in range(0, numProj):

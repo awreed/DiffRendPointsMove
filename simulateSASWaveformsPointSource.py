@@ -5,10 +5,11 @@ from timeDelay import *
 from utils import *
 import time
 
-#torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 
-def simulateSASWaveformsPointSource(RP, ps, BI=None):
+def simulateSASWaveformsPointSource(RP, ps, BI=None, gt=False):
     shape = ps.shape
     numScat = list(shape)[0]
     RP.projDataArray.clear()
@@ -16,6 +17,7 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None):
     dim = list(shape)[1]
     count = 0
     const = torch.tensor(2).to(RP.dev)
+    # atten_window = torch.linspace(1, 0, RP.nSamples).to(RP.dev)
 
     if BI is None:
         for i in range(0, RP.numProj):
@@ -24,29 +26,30 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None):
                 t = (torch.sqrt(torch.sum((pData.projPos - ps[j, :]) ** 2) + RP.zs[0] ** 2))
                 tau = (t * 2) / RP.c
 
-                #try:
-                #    h = tau.register_hook(lambda x: print("tau + " + str(x.data)))
-                #    RP.hooks.append(h)
-                #except RuntimeError:
-                #    pass
-
                 tsd = torchTimeDelay(RP, tau)
-                #try:
-                #    h = tsd.register_hook(lambda x: print("tsd " + str(x.device) + str(x.data)))
-                #    RP.hooks.append(h)
-                #except RuntimeError:
-                #    pass
 
-                pData.wfms.append(tsd)
+                if gt is True:
+                    tsd_scaled = tsd / (t ** 2)
+                else:
+                    tsd_scaled = tsd
+
+
+                pData.wfms.append(tsd_scaled)
 
             pData.wfm = torch.sum(torch.stack(pData.wfms), 0)
-            #try:
+            #wfm = torch.sum(torch.stack(pData.wfms), 0)
+            # try:
             #    h = pData.wfm.register_hook(lambda x: print("wfm " + str(x.device) + str(x.data)))
             #    RP.hooks.append(h)
-            #except RuntimeError:
+            # except RuntimeError:
             #    pass
 
             pData.RCTorch(RP)
+
+            #if gt is False:
+            #    plt.clf()
+            #    plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
+            #    plt.show()
 
             RP.projDataArray.append(pData)
     else:
@@ -64,4 +67,3 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None):
             # print(pData.wfm.shape)
             pData.RCTorch(RP)
             RP.projDataArray.append(pData)
-

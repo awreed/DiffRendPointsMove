@@ -20,25 +20,10 @@ def torchTimeDelay(RP, tau):
     w = (2 * math.pi * f).to(RP.dev)
     arg = w*tau
 
-    #try:
-    #    h = tau.register_hook(lambda x: print("tau_in " + str(x.device) + str(x.data)))
-    #    RP.hooks.append(h)
-    #except:
-    #    pass
-
-    #try:
-    #    h = arg.register_hook(lambda x: print("arg " + str(x.device) + str(x.data)))
-    #    RP.hooks.append(h)
-    #except:
-    #    pass
 
     sign = -1.0
     pr = compExp(arg, sign).to(RP.dev)
-    #try:
-    #    h = pr.register_hook(lambda x: print("pr " + str(x.device) + str(x.data)))
-    #    RP.hooks.append(h)
-    #except:
-    #    pass
+
     X = torch.fft(torchHilbert(RP.transmitSignal, RP), 1)
 
     tsd = torch.ifft(compMul(X, pr), 1)[:, 0]  # Only return the real values
