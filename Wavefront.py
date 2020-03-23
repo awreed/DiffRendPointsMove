@@ -44,9 +44,13 @@ class ObjLoader(object):
             v2 = f[1].split('/')[0]
             v3 = f[2].split('/')[0]
             med = (vs[int(v1)-1, :] + vs[int(v2)-1, :] + vs[int(v3)-1, :])/3
-            med = np.array([med[0], med[2]])
+            med = np.array(med)
+            #med = np.array([med[0], med[2]])
             self.centroids.append(med)
 
         self.centroids = np.asarray(self.centroids)
-        new_array = [tuple(row) for row in self.centroids]
-        self.centroids = np.unique(new_array, axis=0)
+        #print(self.centroids)
+        # Do this if you only want unique 2D points
+        #new_array = [tuple(row) for row in self.centroids]
+        #self.centroids = np.unique(new_array, axis=0)
+        #print(self.centroids)

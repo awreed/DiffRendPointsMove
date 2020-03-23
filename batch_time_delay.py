@@ -13,7 +13,7 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
     if BI is None:
         for i in range(0, RP.numProj):
             pData = ProjData.ProjData(projPos=RP.projectors[i, :], Fs=RP.Fs, tDur=RP.tDur)
-            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1) + torch.tensor((RP.zs[0]**2), device=RP.dev).repeat(numScat))
+            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1))
             tau = (dist * 2) / RP.c
             if propLoss is True:
                 wfms = timeDelayBatched(RP, tau)*atten_window
@@ -28,7 +28,7 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
     else:
         for index in BI:
             pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
-            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1) + torch.tensor((RP.zs[0]**2), device=RP.dev).repeat(numScat))
+            dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1))
             tau = (dist * 2) / RP.c
             if propLoss is True:
                 wfms = timeDelayBatched(RP, tau) * atten_window
