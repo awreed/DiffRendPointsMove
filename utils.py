@@ -36,6 +36,12 @@ def compExp(w, sign):
     imag = sign * torch.sin(w)
     return torch.stack((real, imag), 1)
 
+def batchFromList(l, n):
+    # looping till length l
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
+
 
 def compMul(t1, t2):
     # Multiply two complex numbers together

@@ -20,6 +20,7 @@ from batch_time_delay import *
 import visdom
 from Wavefront import *
 import pickle
+from utils import *
 
 #torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
@@ -36,7 +37,7 @@ if __name__ == '__main__':
         dev = "cpu"
 
     #device = torch.device(dev)
-    BS = 30
+    BS = 20
     thetaStart=0
     thetaStop=359
     thetaStep=1
@@ -48,12 +49,11 @@ if __name__ == '__main__':
     sceneDimY = [-.4, .4]
     sceneDimZ = [0, 0]
     nPix = [128, 128, 1]
-    dim=3
     with torch.no_grad():
-        GT_Mesh = ObjLoader('cube768.obj')
-        GT_Mesh.vertices = GT_Mesh.vertices * 0.3
+        GT_Mesh = ObjLoader('cube_64_bottom_z.obj')
+        GT_Mesh.vertices = GT_Mesh.vertices * .3
         GT_Mesh.getCentroids()
-        EST_Mesh = ObjLoader('cube768.obj')
+        EST_Mesh = ObjLoader('cube_64_bottom_z.obj')
         EST_Mesh.vertices = EST_Mesh.vertices * 0.01
         EST_Mesh.getCentroids()
 
@@ -64,15 +64,14 @@ if __name__ == '__main__':
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
-        ax.set_xlim(-.6, .6)
-        ax.set_ylim(-.6, .6)
-        ax.set_zlim(-.6, .6)
 
-        plt.savefig("pics2/GT_pc.png")
+        plt.savefig("pics6/GT_pc.png")
 
         EST = EST_Mesh.centroids
         ps_GT = torch.from_numpy(GT).to(dev)
         ps_EST = torch.from_numpy(EST).to(dev_1)
+        #ps_GT = torch.tensor([[-.3, -.3, 0.0], [0.3, -.3, 0.0]], requires_grad=False).to(dev)
+        #ps_EST = torch.tensor([[.3, .3, 0.0], [-.3, .3, 0.0]], requires_grad=False).to(dev_1)
 
         # Data structure for ground truth projector waveforms
         RP_GT = RenderParameters(device=dev)
@@ -82,22 +81,22 @@ if __name__ == '__main__':
         simulateWaveformsBatched(RP_GT, ps_GT, propLoss=True)
         print(RP_GT.numProj)
 
-        # Beamformer to create images from projector wavef orms
-        BF_GT = Beamformer(RP=RP_GT, sceneDimX=sceneDimX, sceneDimY=sceneDimY, sceneDimZ=sceneDimZ, nPix=nPix, dim=dim)
+        # Beamformer to create images from projector waveforms
+        BF_GT = Beamformer(RP=RP_GT, sceneDimX=sceneDimX, sceneDimY=sceneDimY, sceneDimZ=sceneDimZ, nPix=nPix)
         x_vals = torch.unique(BF_GT.pixPos[:, 0]).numel()
         y_vals = torch.unique(BF_GT.pixPos[:, 1]).numel()
-        GT_hard = BF_GT.Beamformer(RP_GT, BI=range(0, RP_GT.numProj), soft=False).abs().to(dev_1)
+        GT_hard = BF_GT.Beamformer(RP_GT, BI=range(0, RP_GT.numProj), soft=True).abs().to(dev_1)
         GT_XY = GT_hard.view(x_vals, y_vals)
         plt.clf()
         plt.imshow(GT_XY.detach().cpu().numpy())
-        plt.savefig("pics2/GT.png")
+        plt.savefig("pics6/GT.png")
 
         RP_EST = RenderParameters(device=dev_1)
         RP_EST.generateTransmitSignal()
         RP_EST.defineProjectorPos(thetaStart=thetaStart, thetaStop=thetaStop, thetaStep=thetaStep, rStart=rStart,
                                   rStop=rStop, zStart=zStart, zStop=zStop)
 
-        BF_EST = Beamformer(RP=RP_EST, sceneDimX=sceneDimX, sceneDimY=sceneDimY, sceneDimZ=sceneDimZ, nPix=nPix, dim=dim)
+        BF_EST = Beamformer(RP=RP_EST, sceneDimX=sceneDimX, sceneDimY=sceneDimY, sceneDimZ=sceneDimZ, nPix=nPix)
 
         vis = visdom.Visdom()
         loss_window = vis.line(
@@ -109,38 +108,64 @@ if __name__ == '__main__':
 
     ps_est = ps_EST.clone()
     ps_est.requires_grad = True
-    optimizer = torch.optim.Adam([ps_est], lr=0.01)
+    optimizer = torch.optim.Adam([ps_est], lr=.01)
 
     epochs = 10000
-
+    Projs = range(0, RP_EST.numProj)
+    batches = list(batchFromList(Projs, BS))
+    losses = []
+    #learn_curr = [200, 300, 1000, 1000]
+    #ct = 1
+    #l_ind = 0
+    #w = .01
+    #BF_GT.window = BF_GT.linearStepWindow(w)
+    #BF_EST.window = BF_EST.linearStepWindow(w)
 
     for i in range(0, epochs):
-        batch = random.sample(range(0, RP_EST.numProj - 1), BS)
-        simulateWaveformsBatched(RP_EST, ps_est, batch, propLoss=True)
+        for batch in batches:
+            simulateWaveformsBatched(RP_EST, ps_est, batch, propLoss=True)
 
-        est = BF_EST.Beamformer(RP_EST, BI=range(0, BS), soft=True)
-        GT = BF_GT.Beamformer(RP_GT, BI=batch, soft=True)
+            est = BF_EST.Beamformer(RP_EST, BI=range(0, len(batch)), soft=True).abs().to(dev_1)
+            GT = BF_GT.Beamformer(RP_GT, BI=batch, soft=True).abs().to(dev_1)
 
-        GT_mag = (GT.abs()/torch.norm(GT.abs(), p=1)).to(dev_1)
+            est_norm = est/torch.norm(est, p=1)
+            GT_norm = GT/torch.norm(GT, p=1)
 
-        est_mag = (est.abs()/torch.norm(est.abs(), p=1)).to(dev_1)
+        #est_real = (est.real/torch.norm(est.real, p=1)).to(dev_1)
+        #est_imag = (est.imag / torch.norm(est.imag, p=1)).to(dev_1)
 
-        loss = torch.sum(torch.abs(est_mag - GT_mag))
-        print(loss)
+        #GT_real = (GT.real / torch.norm(GT.real, p=1)).to(dev_1)
+        #GT_imag = (GT.imag / torch.norm(GT.imag, p=1)).to(dev_1)
 
-        loss.backward()
+            loss = torch.sum(torch.abs(est_norm - GT_norm))
+            losses.append(loss)
+            loss.backward()
+
+
+        final_loss = torch.sum(torch.stack(losses))
+        losses.clear()
+        print(final_loss)
         optimizer.step()
         optimizer.zero_grad()
-        ps_est.data += noise.sample(ps_est.shape).squeeze().to(dev_1)
+        #ps_est.data += noise.sample(ps_est.shape).squeeze().to(dev_1)
+
+        #if ct % learn_curr[l_ind] == 0:
+        #    ct = 1
+        #    l_ind += 1
+        #    w /= 1
+        #    BF_GT.window = BF_GT.linearStepWindow(w)
+        #    BF_EST.window = BF_EST.linearStepWindow(w)
+        #else:
+        #    ct += 1
 
         if i % 10 == 0:
             with torch.no_grad():
                 simulateWaveformsBatched(RP_EST, ps_est, propLoss=True)
-                est_hard = BF_EST.Beamformer(RP_EST, BI=range(0, RP_EST.numProj), soft=False).abs()
+                est_hard = BF_EST.Beamformer(RP_EST, BI=range(0, RP_EST.numProj), soft=True).abs()
                 plt.clf()
                 est_xy = est_hard.view(x_vals, y_vals)
                 plt.imshow(est_xy.detach().cpu().numpy())
-                plt.savefig("pics2/est" + str(i) + ".png")
+                plt.savefig("pics6/est" + str(i) + ".png")
                 ps = ps_est.detach().cpu().numpy()
                 fig = plt.figure()
                 ax = fig.add_subplot(111, projection='3d')
@@ -152,11 +177,11 @@ if __name__ == '__main__':
                 ax.set_zlim(-.6, .6)
 
                 ax.scatter(ps[:, 0], ps[:, 1], ps[:, 2])
-                pickle.dump(fig, open('FigureObject' + str(i) + '.fig.pickle', 'wb'))
-                plt.savefig("pics2/est_pc" + str(i) + ".png")
+                pickle.dump(fig, open('pics6/FigureObject' + str(i) + '.fig.pickle', 'wb'))
+                plt.savefig("pics6/est_pc" + str(i) + ".png")
                 plt.close(fig)
 
                 del fig
 
 
-        vis.line(X=torch.ones((1)).cpu() * i, Y=loss.unsqueeze(0).cpu(), win=loss_window, update='append')
+        vis.line(X=torch.ones((1)).cpu() * i, Y=final_loss.unsqueeze(0).cpu(), win=loss_window, update='append')

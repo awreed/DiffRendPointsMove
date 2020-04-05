@@ -7,6 +7,7 @@ from joblib import Parallel, delayed
 import multiprocessing
 import torch
 from utils import *
+import scipy
 
 #torch.set_default_tensor_type('torch.cuda.FloatTensor')
 import time
@@ -29,42 +30,76 @@ class Beamformer:
         self.yVect = np.linspace(self.sceneDimY[0], self.sceneDimY[1], self.nPix[1])
         self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.nPix[2])
 
-        self.window = self.windowIndex(self.RP)
+        #self.window = self.linearWindow(self.RP)
+        #self.window = self.sincWindow(self.RP)
+        #self.window = self.gaussianWindow(self.RP)
+        self.window = self.linearStepWindow(.01)
+        #self.window = self.linearWindow()
 
         self.dim = kwargs.get('dim', 3)
 
         self.scene = None
 
-        if self.dim == 3:
-            self.numPix = np.size(self.xVect) * np.size(self.yVect) * np.size(self.zVect)
-            self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
-            (x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
-            pixPos = np.hstack(
-                (np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
-            # Convert pixel positions to tensor
-            self.pixPos = torch.from_numpy(pixPos).to(self.dev)
-            self.pixPos.requires_grad = True
-        else:
-            self.numPix = np.size(self.xVect) * np.size(self.yVect)
-            self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
-            (x, y) = np.meshgrid(self.xVect, self.yVect)
-            pixPos = np.hstack(
-                (np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1))))
-            # Convert pixel positions to tensor
-            self.pixPos = torch.from_numpy(pixPos).to(self.dev)
-            self.pixPos.requires_grad = True
+        self.numPix = np.size(self.xVect) * np.size(self.yVect) * np.size(self.zVect)
+        self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
+        (x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
+        pixPos = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
+        # Convert pixel positions to tensor
+        self.pixPos = torch.from_numpy(pixPos).to(self.dev)
+        self.pixPos.requires_grad = True
+
+    def linearStepWindow(self, w):
+        full_window = []
+        for ind in range(0, self.RP.nSamples):
+            left = torch.linspace(0, 1, ind)
+            right = torch.linspace(1, 0, int(self.RP.nSamples-ind))
+            left[0:-1] = left[0:-1]*w
+            right[1:] = right[1:]*w
+            window = torch.cat((left, right), 0)
+            full_window.append(window)
+
+        window = torch.stack(full_window).to(self.RP.dev)
+        #plt.clf()
+        #plt.stem(window[1000, :].detach().cpu().numpy(), use_line_collection=True)
+        #plt.show()
+
+        return window
 
     # Pre-compute matrix of soft index values for
-    def windowIndex(self, RP):
+    def linearWindow(self):
         full_window = []
-        p=1#shape the window to immitate delta sampling with ahigh p value
-        for ind in range(0, RP.nSamples):
-            windowLeft = torch.linspace(0, 1, ind)**p
-            windowRight = torch.linspace(1, 0, int(RP.nSamples-ind))**p
+
+        for ind in range(0, self.RP.nSamples):
+            windowLeft = torch.linspace(0, 1, ind)
+            windowRight = torch.linspace(1, 0, int(self.RP.nSamples-ind))
             window = torch.cat((windowLeft, windowRight), 0)
             full_window.append(window)
 
+        window = torch.stack(full_window).to(self.RP.dev)
+
+        return window
+
+    def sincWindow(self, RP):
+        full_window = []
+        u = torch.linspace(0, RP.nSamples-1, RP.nSamples).detach().cpu().numpy()
+        for i in range(0, len(u)):
+            window = torch.from_numpy(np.sinc(u[i] - u))
+            full_window.append(window)
+
         return torch.stack(full_window).to(RP.dev)
+
+    def gaussianWindow(self, RP):
+        full_window = []
+        mu, sigma = 1000, 100
+        x_values = np.arange(0, RP.nSamples, 1)
+        for i in range(0, len(x_values)):
+            y_values = scipy.stats.norm(i, sigma)
+            vals = torch.from_numpy(y_values.pdf(x_values))
+            full_window.append(vals)
+        return torch.stack(full_window).to(RP.dev)
+        #plt.clf()
+        #plt.stem(x_values, y_values.pdf(x_values), use_line_collection=True)
+        #plt.show()
 
     # 2D/3D Beamformer with option for soft indexing so that its differentiable
     def Beamformer(self, RP, BI = None, soft=True):
