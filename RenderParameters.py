@@ -3,6 +3,7 @@ import numpy as np
 from utils import *
 import scipy.signal
 import math
+import matplotlib.pyplot as plt
 
 
 class RenderParameters:
@@ -84,6 +85,7 @@ class RenderParameters:
 
         self.pulse = torchHilbert(self.transmitSignal, self)
         self.Pulse = torch.fft(self.pulse, 1).to(self.dev)
+
 
     def defineProjectorPosGrid(self, **kwargs):
         self.xStart = kwargs.get('xStart', -1)

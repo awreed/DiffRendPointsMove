@@ -16,13 +16,37 @@ from Complex import *
 
 class Beamformer:
     def __init__(self, **kwargs):
+        self.RP = kwargs.get('RP', None)
+        self.dev = self.RP.dev
+
+        #self.window = self.linearWindow(self.RP)
+        #self.window = self.sincWindow(self.RP)
+        #self.window = self.heavySideStep()
+        #self.window = self.gaussianWindow(self.RP)
+        self.window = self.linearStepWindow(1)
+        #self.window = self.linearWindow()
+
+        #Define scene parameters set to None and initialed by initScene()
+        self.scene = None
+        self.sceneDimX = None
+        self.sceneDimY = None
+        self.sceneDimZ = None
+        self.nPix = None
+        self.xVect = None
+        self.yVect = None
+        self.zVect = None
+        self.numPix = None
+        self.sceneCenter = None
+        self.pixPos = None
+
+        # Forward kwargs to initScene()
+        self.initScene(sceneDimX=kwargs.get('sceneDimX'), sceneDimY=kwargs.get('sceneDimY'),
+                       sceneDimZ=kwargs.get('sceneDimZ'), nPix=kwargs.get('nPix'))
+
+    def initScene(self, **kwargs):
         self.sceneDimX = kwargs.get('sceneDimX', np.array([-.15, .15]))
         self.sceneDimY = kwargs.get('sceneDimY', np.array([-.15, .15]))
         self.sceneDimZ = kwargs.get('sceneDimZ', np.array([-.15, .15]))
-
-        self.RP = kwargs.get('RP', None)
-
-        self.dev = self.RP.dev
 
         self.nPix = kwargs.get('nPix', np.array([128, 128, 64]))
 
@@ -30,23 +54,30 @@ class Beamformer:
         self.yVect = np.linspace(self.sceneDimY[0], self.sceneDimY[1], self.nPix[1])
         self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.nPix[2])
 
-        #self.window = self.linearWindow(self.RP)
-        #self.window = self.sincWindow(self.RP)
-        #self.window = self.gaussianWindow(self.RP)
-        self.window = self.linearStepWindow(.01)
-        #self.window = self.linearWindow()
-
-        self.dim = kwargs.get('dim', 3)
-
-        self.scene = None
-
         self.numPix = np.size(self.xVect) * np.size(self.yVect) * np.size(self.zVect)
         self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
         (x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
-        pixPos = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
+        pixPos = np.hstack(
+            (np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
         # Convert pixel positions to tensor
         self.pixPos = torch.from_numpy(pixPos).to(self.dev)
-        self.pixPos.requires_grad = True
+        self.pixPos.requires_grad = False
+
+
+    def heavySideStep(self):
+        full_window = []
+        w = 10
+        for ind in range(0, self.RP.nSamples):
+            left = torch.ones(ind)
+            right = torch.ones(int(self.RP.nSamples-ind))
+            right[0] = w
+            window = torch.cat((left, right), 0)
+            #plt.stem(window.detach().cpu().numpy(), use_line_collection=True)
+            #plt.show()
+            full_window.append(window)
+
+        window = torch.stack(full_window).to(self.RP.dev)
+        return window
 
     def linearStepWindow(self, w):
         full_window = []
@@ -116,6 +147,12 @@ class Beamformer:
         pixGridReal = []
         pixGridImag = []
 
+        #real = wfmData[0, :, 0].detach().cpu().numpy()
+        #imag = wfmData[0, :, 1].detach().cpu().numpy()
+        #sinc = self.window[900, :].detach().cpu().numpy()
+        #plt.stem(sinc, use_line_collection=True)
+        #plt.show()
+
         x = torch.ones(self.numPix, 3).to(RP.dev)
 
         # Delay and sum where indices selected by multiplying by window - differentiable.
@@ -154,3 +191,28 @@ class Beamformer:
 
         self.scene = Complex(real=real_full, imag=imag_full)
         return self.scene
+
+    def displayScene(self, **kwargs):
+        dim = kwargs.get('dim', 3)
+        real = kwargs.get('real', False)
+        imag = kwargs.get('imag', False)
+        mag = kwargs.get('mag', True)
+
+        sceneReal = self.scene.real.detach().cpu().numpy()
+        sceneImag = self.scene.imag.detach().cpu().numpy()
+        sceneMag = self.scene.abs().detach().cpu().numpy()
+
+        pixels = self.pixPos.detach().cpu().numpy()
+
+        if dim == 3:
+            if mag == True:
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection='3d')
+                ax.scatter(pixels[:, 0], pixels[:, 1], pixels[:, 2], c=sceneMag, alpha=0.5)
+                ax.set_xlabel('X')
+                ax.set_ylabel('Y')
+                ax.set_zlabel('Z')
+                plt.show()
+
+
+
