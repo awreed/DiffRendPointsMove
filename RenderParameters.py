@@ -10,9 +10,10 @@ class RenderParameters:
     def __init__(self, **kwargs):
         # self.Fs = torch.tensor([kwargs.get('Fs', 100000)], requires_grad=True)
         # self.tDur = torch.tensor([kwargs.get('tDur', .02)], requires_grad=True)
-        self.Fs = kwargs.get('Fs', 100000) * 1.0
-        self.tDur = kwargs.get('tDur', .02)
-        self.nSamples = int(self.Fs * self.tDur)
+        self.Fs = kwargs.get('Fs', 70000) * 1.0
+        #self.tDur = kwargs.get('tDur', .02)
+        #self.nSamples = int(self.Fs * self.tDur)
+        self.nSamples = None # Computed under generateTransmitSignal()
 
         self.dev = kwargs.get('device', None)
 
@@ -45,10 +46,10 @@ class RenderParameters:
         self.rs = None  # Array of radius values in meters
         self.zs = None  # Array of z values in meters
         self.thetas = None  # Array of theta values in degrees
-        self.projDataArray = []
-        self.xStart = None
-        self.xStop = None
-        self.yStart = None
+        self.projDataArray = [] # Accumulate the projectors and associated waveforms before calling backwards()
+        self.xStart = None # Grid geometry: Starting x position
+        self.xStop = None # Grid geometry: Stopping x position
+        self.yStart = None # Grid geometry: Staring y position
         self.yStop = None
         self.zStart = None
         self.zStop = None
@@ -61,30 +62,82 @@ class RenderParameters:
         self.xStep = None
         self.yStep = None
         self.hooks = []
+        self.sceneDimX = None # Ensonified scene dimensions [-x, x]
+        self.sceneDimY = None # Ensonified scene dimensions [-y, y]
+        self.sceneDimZ = None # Ensonified scene dimensions [-z, z]
+        self.pixDim = None # N pixels in beamformed image in format [x, y, z]
+        self.xVect = None # Vector of scene pixels x positions
+        self.yVect = None # Vector of scene pixel y positions
+        self.zVect = None # Vector of scene pixel z positions
+        self.numPix = None # Number of pixels in scene
+        self.sceneCenter = None # Center of the ensonified scene
+        self.pixPos = None
+        self.minDist = None
+        self.maxDist = None
 
+
+    def defineSceneDimensions(self, **kwargs):
+        self.sceneDimX = kwargs.get('sceneDimX', [-.4, .4])
+        self.sceneDimY = kwargs.get('sceneDimY', [-.4, .4])
+        self.sceneDimZ = kwargs.get('sceneDimZ', [0, 0])
+        self.pixDim = kwargs.get('pixDim', [128, 128, 1])
+
+        self.xVect = np.linspace(self.sceneDimX[0], self.sceneDimX[1], self.pixDim[0])
+        self.yVect = np.linspace(self.sceneDimY[0], self.sceneDimY[1], self.pixDim[1])
+        self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.pixDim[2])
+
+        self.numPix = np.size(self.xVect) * np.size(self.yVect)
+        self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
+        (x, y) = np.meshgrid(self.xVect, self.yVect)
+        self.pixPos = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1))))
 
     def generateTransmitSignal(self):
-        fs = cvtNP(self.Fs)
-        tDur = cvtNP(self.tDur)
-        #print(fs)
+        # Calculate waveform duration based on scene geometry
+        # Assumes scene center is at
+        #(x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
+        #pix3D = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
+        #min_dist = []
+        #max_dist = []
+        #x = np.ones_like(pix3D)
+        #for proj in self.projectors:
+        #    proj = proj.detach().cpu().numpy()
+        #    dist = np.sum((pix3D - (x*proj))**2, 1)
+        #    tofs = 2 * np.sqrt(dist)
+        #    min_dist.append(np.min(tofs))
+        #    max_dist.append(np.max(tofs))
 
-        sig = np.zeros(int(fs * tDur))  # Allocate entire receive signal
+        #self.minDist = min(min_dist)
+        self.minDist = 0.8686305776399169
+        #print(self.minDist)
+        #self.minDist = 0
+        #self.maxDist = max(max_dist)
+        #self.tDur = .02
+        #self.tDur = (self.maxDist - self.minDist)/self.c
+        self.tDur = 0.007467797273989506
+        #print(self.tDur)
+        #self.nSamples = math.ceil(self.tDur * self.Fs)
+        #self.nSamples = self.nSamples + 50 # Hack to get optimization to work
+        #self.nSamples = int(math.ceil(self.nSamples/100.0))*100 # round to nearest hundred
+        self.nSamples = 600
+        #print(self.nSamples)
+
+
+        sig = np.zeros(self.nSamples)  # Allocate entire receive signal
         #sig[0] = 1
-        times = np.linspace(self.tStart, self.tStop - 1 / fs, num=int((self.tStop - self.tStart) * fs))
+        times = np.linspace(self.tStart, self.tStop - 1 / self.Fs, num=int((self.tStop - self.tStart) * self.Fs))
         LFM = scipy.signal.chirp(times, self.fStart, self.tStop, self.fStop)  # Generate LFM chirp
         window = scipy.signal.tukey(len(LFM), self.winRatio)
         LFM = np.multiply(LFM, window)  # Window chirp to suppress side lobes
-        ind1 = int(self.tStart * fs)
+        ind1 = 0 # Not supporting staring time other than zero atm
         ind2 = ind1 + len(LFM)
         sig[ind1:ind2] = LFM  # Insert chirp into receive signal
 
         # Convert transmit signal to tensor
-        #print(self.dev)
         self.transmitSignal = torch.from_numpy(sig).to(self.dev)
         self.transmitSignal.requires_grad = False
 
         self.pulse = torchHilbert(self.transmitSignal, self)
-        self.Pulse = torch.fft(self.pulse, 1).to(self.dev)
+        self.Pulse = torch.fft(self.pulse, 1).to(self.dev) # Complex version of the transmitted signal
 
 
     def defineProjectorPosGrid(self, **kwargs):
@@ -160,4 +213,5 @@ class RenderParameters:
                     count = count + 1
         self.projectors = torch.from_numpy(projectors).to(self.dev)
         self.projectors.requires_grad = False
+
 

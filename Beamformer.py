@@ -26,41 +26,24 @@ class Beamformer:
         self.window = self.linearStepWindow(1)
         #self.window = self.linearWindow()
 
-        #Define scene parameters set to None and initialed by initScene()
         self.scene = None
-        self.sceneDimX = None
-        self.sceneDimY = None
-        self.sceneDimZ = None
-        self.nPix = None
-        self.xVect = None
-        self.yVect = None
-        self.zVect = None
-        self.numPix = None
-        self.sceneCenter = None
-        self.pixPos = None
 
-        # Forward kwargs to initScene()
-        self.initScene(sceneDimX=kwargs.get('sceneDimX'), sceneDimY=kwargs.get('sceneDimY'),
-                       sceneDimZ=kwargs.get('sceneDimZ'), nPix=kwargs.get('nPix'))
+        self.sceneDimX = self.RP.sceneDimX
+        self.sceneDimY = self.RP.sceneDimY
+        self.sceneDimZ = self.RP.sceneDimZ
 
-    def initScene(self, **kwargs):
-        self.sceneDimX = kwargs.get('sceneDimX', np.array([-.15, .15]))
-        self.sceneDimY = kwargs.get('sceneDimY', np.array([-.15, .15]))
-        self.sceneDimZ = kwargs.get('sceneDimZ', np.array([-.15, .15]))
+        self.nPix = self.RP.pixDim
 
-        self.nPix = kwargs.get('nPix', np.array([128, 128, 64]))
+        self.xVect = self.RP.xVect
+        self.yVect = self.RP.yVect
+        self.zVect = self.RP.zVect
 
-        self.xVect = np.linspace(self.sceneDimX[0], self.sceneDimX[1], self.nPix[0])
-        self.yVect = np.linspace(self.sceneDimY[0], self.sceneDimY[1], self.nPix[1])
-        self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.nPix[2])
-
-        self.numPix = np.size(self.xVect) * np.size(self.yVect) * np.size(self.zVect)
-        self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
-        (x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
-        pixPos = np.hstack(
-            (np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
+        self.numPix = self.RP.numPix
+        self.sceneCenter = self.RP.sceneCenter
+        self.pixPos = self.RP.pixPos
         # Convert pixel positions to tensor
-        self.pixPos = torch.from_numpy(pixPos).to(self.dev)
+        self.pixPos = torch.from_numpy(self.pixPos)
+        self.pixPos = self.pixPos.type(torch.float32).to(self.dev)
         self.pixPos.requires_grad = False
 
 
@@ -99,12 +82,18 @@ class Beamformer:
     # Pre-compute matrix of soft index values for
     def linearWindow(self):
         full_window = []
+        sigma = 1
 
         for ind in range(0, self.RP.nSamples):
-            windowLeft = torch.linspace(0, 1, ind)
-            windowRight = torch.linspace(1, 0, int(self.RP.nSamples-ind))
+            left = torch.linspace(0, 1, ind)
+            right = torch.linspace(1, 0, int(self.RP.nSamples-ind))
+            windowLeft = torch.exp(sigma*left) - torch.ones_like(left)
+            windowRight = torch.exp(sigma*right) - torch.ones_like(right)
             window = torch.cat((windowLeft, windowRight), 0)
             full_window.append(window)
+        #plt.clf()
+        #plt.stem(full_window[250].detach().cpu().numpy(), use_line_collection=True)
+        #plt.show()
 
         window = torch.stack(full_window).to(self.RP.dev)
 
@@ -133,7 +122,7 @@ class Beamformer:
         #plt.show()
 
     # 2D/3D Beamformer with option for soft indexing so that its differentiable
-    def Beamformer(self, RP, BI = None, soft=True):
+    def Beamform(self, RP, BI = None, soft=True, **kwargs):
         posVecList = []
         for i in BI:
             posVecList.append(RP.projDataArray[i].projPos)
@@ -147,20 +136,34 @@ class Beamformer:
         pixGridReal = []
         pixGridImag = []
 
+        z = kwargs.get('z', 0.0)
+
+        zTorch = (torch.ones(self.numPix) * z).unsqueeze(1).to(self.dev)
+
+        pixPlane = torch.cat((self.pixPos, zTorch), 1)
+        pixPlane.requires_grad = False
+
+        #print(self.zVect)
+        #zHeight = np.random.choice(self.zVect, 1)
+        #print(self.pixPos.shape)
+        #pixPlane = self.RP.pixPos[(self.RP.pixPos[:, 2] == zHeight)]
+
+
+
         #real = wfmData[0, :, 0].detach().cpu().numpy()
         #imag = wfmData[0, :, 1].detach().cpu().numpy()
         #sinc = self.window[900, :].detach().cpu().numpy()
         #plt.stem(sinc, use_line_collection=True)
         #plt.show()
 
-        x = torch.ones(self.numPix, 3).to(RP.dev)
+        x = torch.ones_like(pixPlane).to(RP.dev)
 
         # Delay and sum where indices selected by multiplying by window - differentiable.
         if soft == True:
             for i in range(0, len(BI)):
                 posVec_pix = x * posVec[i, :]
-                sum = torch.sum((self.pixPos - posVec_pix) ** 2, 1)
-                tofs = 2 * torch.sqrt(sum)
+                sum = torch.sum((pixPlane - posVec_pix) ** 2, 1)
+                tofs = (2 * torch.sqrt(sum)) - self.RP.minDist
 
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
@@ -174,8 +177,8 @@ class Beamformer:
         else:
             for i in range(0, len(BI)):
                 posVec_pix = x * posVec[i, :]
-                sum = torch.sum((self.pixPos - posVec_pix) ** 2, 1)
-                tofs = 2 * torch.sqrt(sum)
+                sum = torch.sum((pixPlane - posVec_pix) ** 2, 1)
+                tofs = (2 * torch.sqrt(sum)) - self.RP.minDist
 
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
@@ -191,6 +194,24 @@ class Beamformer:
 
         self.scene = Complex(real=real_full, imag=imag_full)
         return self.scene
+
+    def display2Dscene(self, **kwargs):
+        path = kwargs.get('path', None)
+        show = kwargs.get('show', False)
+
+        x_vals = torch.unique(self.pixPos[:, 0]).numel()
+        y_vals = torch.unique(self.pixPos[:, 1]).numel()
+
+        sceneXY = self.scene.abs().view(x_vals, y_vals)
+        plt.clf()
+        plt.imshow(sceneXY.detach().cpu().numpy())
+
+        if path is not None:
+            plt.savefig(path)
+        if show is True:
+            plt.show()
+
+
 
     def displayScene(self, **kwargs):
         dim = kwargs.get('dim', 3)
