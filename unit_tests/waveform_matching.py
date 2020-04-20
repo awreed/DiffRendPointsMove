@@ -34,7 +34,7 @@ loss_val = 10000
 thresh = 10
 lr = .1
 #optimizer = torch.optim.SGD([ps], lr=lr, momentum=0)
-wass_loss = SamplesLoss(loss="sinkhorn", p=1, blur=.01, diameter=1.0, debias=False)
+wass_loss = SamplesLoss(loss="sinkhorn", p=1, blur=.01, diameter=1.0)
 wiggle = 2.0*(1/RP_GT.Fs)*RP_GT.c
 noise = torch.distributions.normal.Normal(torch.tensor([0.0]), torch.tensor([wiggle]))
 
@@ -56,6 +56,9 @@ for i in range(0, epochs):
         #est_wfm = VectorDistribution(EST_Wfm1)
         #gt_wfm = VectorDistribution(GT_Wfm1)
         #loss = torch.abs(est_wfm.mean - gt_wfm.mean)
+
+        print(EST_Wfm.shape)
+        print(EST_Loc.shape)
 
         loss = wass_loss(EST_Wfm, EST_Loc, GT_Wfm, GT_Loc)
         #print(p1.requires_grad)

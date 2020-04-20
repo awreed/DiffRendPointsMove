@@ -4,13 +4,15 @@ from utils import *
 import scipy.signal
 import math
 import matplotlib.pyplot as plt
+#import sys
+#np.set_printoptions(threshold=sys.maxsize)
 
 
 class RenderParameters:
     def __init__(self, **kwargs):
         # self.Fs = torch.tensor([kwargs.get('Fs', 100000)], requires_grad=True)
         # self.tDur = torch.tensor([kwargs.get('tDur', .02)], requires_grad=True)
-        self.Fs = kwargs.get('Fs', 70000) * 1.0
+        self.Fs = kwargs.get('Fs', 100000) * 1.0
         #self.tDur = kwargs.get('tDur', .02)
         #self.nSamples = int(self.Fs * self.tDur)
         self.nSamples = None # Computed under generateTransmitSignal()
@@ -80,6 +82,11 @@ class RenderParameters:
         self.sceneDimX = kwargs.get('sceneDimX', [-.4, .4])
         self.sceneDimY = kwargs.get('sceneDimY', [-.4, .4])
         self.sceneDimZ = kwargs.get('sceneDimZ', [0, 0])
+
+        assert abs(self.sceneDimX[0]) == abs(self.sceneDimX[1]), "abs(sceneDimX[0]) != abs(sceneDimX[1])"
+        assert abs(self.sceneDimY[0]) == abs(self.sceneDimY[1]), "abs(sceneDimY[0]) != abs(sceneDimY[1])"
+        assert abs(self.sceneDimZ[0]) == abs(self.sceneDimZ[1]), "abs(sceneDimZ[0]) != abs(sceneDimZ[1])"
+
         self.pixDim = kwargs.get('pixDim', [128, 128, 1])
 
         self.xVect = np.linspace(self.sceneDimX[0], self.sceneDimX[1], self.pixDim[0])
@@ -87,40 +94,56 @@ class RenderParameters:
         self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.pixDim[2])
 
         self.numPix = np.size(self.xVect) * np.size(self.yVect)
+        self.numPix3D = np.size(self.xVect) * np.size(self.yVect) * np.size(self.zVect)
+        print(self.numPix3D)
         self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
         (x, y) = np.meshgrid(self.xVect, self.yVect)
         self.pixPos = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1))))
 
-    def generateTransmitSignal(self):
+        (x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
+        self.pixPos3D = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)),
+                                   np.reshape(z, (np.size(z), 1))))
+
+    def generateTransmitSignal(self, **kwargs):
         # Calculate waveform duration based on scene geometry
         # Assumes scene center is at
-        #(x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
-        #pix3D = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)), np.reshape(z, (np.size(z), 1))))
-        #min_dist = []
-        #max_dist = []
-        #x = np.ones_like(pix3D)
-        #for proj in self.projectors:
-        #    proj = proj.detach().cpu().numpy()
-        #    dist = np.sum((pix3D - (x*proj))**2, 1)
-        #    tofs = 2 * np.sqrt(dist)
-        #    min_dist.append(np.min(tofs))
-        #    max_dist.append(np.max(tofs))
+        # Find all edges of scene
+        compute = kwargs.get('compute', True)
+        if compute:
+            edgeIndices = np.where(np.logical_or(self.pixPos3D[:, 0] == abs(self.sceneDimX[0]), self.pixPos3D[:, 1] == abs(self.sceneDimY[0]),
+            self.pixPos3D[:, 2] == abs(self.sceneDimZ[0])))
 
-        #self.minDist = min(min_dist)
-        self.minDist = 0.8686305776399169
-        #print(self.minDist)
-        #self.minDist = 0
-        #self.maxDist = max(max_dist)
-        #self.tDur = .02
-        #self.tDur = (self.maxDist - self.minDist)/self.c
-        self.tDur = 0.007467797273989506
-        #print(self.tDur)
-        #self.nSamples = math.ceil(self.tDur * self.Fs)
-        #self.nSamples = self.nSamples + 50 # Hack to get optimization to work
-        #self.nSamples = int(math.ceil(self.nSamples/100.0))*100 # round to nearest hundred
-        self.nSamples = 600
-        #print(self.nSamples)
+            edges = self.pixPos3D[edgeIndices]
 
+            # Find minimum and maximum time of flight distances so we can range gate the waveforms
+            min_dist = []
+            max_dist = []
+            x = np.ones_like(edges)
+            for proj in self.projectors:
+                proj = proj.detach().cpu().numpy()
+                dist = np.sum((edges - (x*proj))**2, 1)
+                tofs = 2 * np.sqrt(dist)
+                min_dist.append(np.min(tofs))
+                max_dist.append(np.max(tofs))
+
+            self.minDist = min(min_dist)
+            #self.minDist = 0.8686349512375218
+            print(self.minDist)
+            #self.minDist = 0
+            self.maxDist = max(max_dist)
+            #self.tDur = .02
+            self.tDur = (self.maxDist - self.minDist)/self.c
+            #self.tDur = 0.007467797273989506
+            print(self.tDur)
+            self.nSamples = math.ceil(self.tDur * self.Fs)
+            self.nSamples = self.nSamples + 50 # Hack to get optimization to work
+            self.nSamples = int(math.ceil(self.nSamples/100.0))*100 # round to nearest hundred
+            #self.nSamples = 600
+            print(self.nSamples)
+        else:
+            self.minDist = 0.8686349512375218
+            self.tDur = 0.007467797273989506
+            self.nSamples = 600
 
         sig = np.zeros(self.nSamples)  # Allocate entire receive signal
         #sig[0] = 1
@@ -161,21 +184,82 @@ class RenderParameters:
         self.ys = np.linspace(self.yStart, self.yStop, self.numYs)
         self.zs = np.linspace(self.zStart, self.zStop, self.numZs)
 
-        projectors = np.zeros((self.numProj, 2))
+        projectors = np.zeros((self.numProj, 3))
 
         count = 0
         for i in range(0, self.numXs):
             for j in range(0, self.numYs):
-                projectors[count, :] = [self.xs[i], self.ys[j]]
-                count = count + 1
+                for k in range(0, self.numZs):
+                    projectors[count, :] = [self.xs[i], self.ys[j], self.zs[k]]
+                    count = count + 1
         self.projectors = torch.from_numpy(projectors).to(self.dev)
         self.projectors.requires_grad = False
 
-    def freeHooks(self, **kwargs):
-        N = len(self.hooks)
-        for i in range(0, N):
-            tmp = self.hooks[i]
-            tmp.remove()
+
+
+    def defineProjectorPosSpiral(self, **kwargs):
+        #Spiral at a fixed radius
+
+        self.thetaStart = kwargs.get('thetaStart', 0)
+        self.thetaStop = kwargs.get('thetaStop', 359)
+        self.thetaStep = kwargs.get('thetaStep', 1)
+        self.zStart = kwargs.get('zStart', -0.4)
+        self.zStop = kwargs.get('zStop', 0.4)
+        self.zStep = kwargs.get('zStep', 0.001)
+        self.rMax = 1.000
+
+        show = kwargs.get('show', False)
+
+        # Count number of theta, r, and z values
+        self.numZs = int((self.zStop - self.zStart) / self.zStep) + 1
+
+
+        print(self.numZs)
+
+        self.numProj = int(self.numZs)
+
+        self.zs = np.linspace(self.zStart, self.zStop, self.numZs)
+
+        # Allocate memory for projector array
+        projectors = np.zeros((self.numProj, 3))
+
+        # Pack every projector position into an array
+        count = 0
+        theta = self.thetaStart
+        r = self.rMax
+        for i in range(0, self.numZs):
+            projectors[count, :] = [r * math.cos(np.deg2rad(theta)),
+                                    r * math.sin(np.deg2rad(theta)), self.zs[i]]
+            count = count + 1
+            theta += self.thetaStep
+
+            if theta % self.thetaStop == 0:
+                theta = self.thetaStart
+
+        #theta = self.thetaStart
+        #r = self.rMax
+        #for i in range(0, self.numZs):
+        #    projectors[count, :] = [self.zs[i], r * math.cos(np.deg2rad(theta)),
+        #                            r * math.sin(np.deg2rad(theta))]
+        #    count = count + 1
+        #    theta += self.thetaStep
+
+        #    if theta % self.thetaStop == 0:
+        #        theta = self.thetaStart
+
+
+        # Display the projectors
+        if show == True:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.scatter(projectors[:, 0], projectors[:, 1], projectors[:, 2])
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+            plt.show()
+
+        self.projectors = torch.from_numpy(projectors).to(self.dev)
+        self.projectors.requires_grad = True
 
     def defineProjectorPos(self, **kwargs):
         self.thetaStart = kwargs.get('thetaStart', 0)
@@ -187,6 +271,8 @@ class RenderParameters:
         self.rStart = kwargs.get('rStart', 1)
         self.rStop = kwargs.get('rStop', 1)
         self.rStep = kwargs.get('rStep', 1)
+        show = kwargs.get('show', False)
+        print(show)
 
         # Count number of theta, r, and z values
         self.numThetas = int((self.thetaStop - self.thetaStart) / self.thetaStep) + 1
@@ -211,7 +297,14 @@ class RenderParameters:
                     projectors[count, :] = [self.rs[j] * math.cos(np.deg2rad(self.thetas[i])),
                                             self.rs[j] * math.sin(np.deg2rad(self.thetas[i])), self.zs[k]]
                     count = count + 1
+
+        if show == True:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.scatter(projectors[:, 0], projectors[:, 1], projectors[:, 2])
+            ax.x_label
+            plt.show()
         self.projectors = torch.from_numpy(projectors).to(self.dev)
-        self.projectors.requires_grad = False
+        self.projectors.requires_grad = True
 
 

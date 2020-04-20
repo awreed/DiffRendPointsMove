@@ -45,6 +45,7 @@ class Beamformer:
         self.pixPos = torch.from_numpy(self.pixPos)
         self.pixPos = self.pixPos.type(torch.float32).to(self.dev)
         self.pixPos.requires_grad = False
+        self.pixels = None
 
 
     def heavySideStep(self):
@@ -124,46 +125,41 @@ class Beamformer:
     # 2D/3D Beamformer with option for soft indexing so that its differentiable
     def Beamform(self, RP, BI = None, soft=True, **kwargs):
         posVecList = []
+        projWfmList = []
+
         for i in BI:
             posVecList.append(RP.projDataArray[i].projPos)
-        posVec = torch.stack(posVecList).to(RP.dev)
-
-        projWfmList = []
-        for i in BI:
             projWfmList.append(RP.projDataArray[i].wfmRC.vector())
+        posVec = torch.stack(posVecList).to(RP.dev)
         wfmData = torch.stack(projWfmList).to(RP.dev)
 
         pixGridReal = []
         pixGridImag = []
 
-        z = kwargs.get('z', 0.0)
+        z = kwargs.get('z', None)
 
-        zTorch = (torch.ones(self.numPix) * z).unsqueeze(1).to(self.dev)
+        pixels = kwargs.get('pixels', None)
 
-        pixPlane = torch.cat((self.pixPos, zTorch), 1)
-        pixPlane.requires_grad = False
+        if pixels is not None:
+            pixels = torch.from_numpy(pixels).to(self.dev)
+            pixels.requires_grad = False
 
-        #print(self.zVect)
-        #zHeight = np.random.choice(self.zVect, 1)
-        #print(self.pixPos.shape)
-        #pixPlane = self.RP.pixPos[(self.RP.pixPos[:, 2] == zHeight)]
+        if pixels is None and z is not None:
+            zTorch = (torch.ones(self.numPix) * z).unsqueeze(1).to(self.dev)
 
+            #pixels = torch.cat((zTorch, self.pixPos), 1)
+            pixels = torch.cat((self.pixPos, zTorch), 1)
+            pixels.requires_grad = False
 
+        self.pixels = pixels
 
-        #real = wfmData[0, :, 0].detach().cpu().numpy()
-        #imag = wfmData[0, :, 1].detach().cpu().numpy()
-        #sinc = self.window[900, :].detach().cpu().numpy()
-        #plt.stem(sinc, use_line_collection=True)
-        #plt.show()
-
-        x = torch.ones_like(pixPlane).to(RP.dev)
-
+        x = torch.ones_like(pixels).to(RP.dev)
         # Delay and sum where indices selected by multiplying by window - differentiable.
         if soft == True:
             for i in range(0, len(BI)):
                 posVec_pix = x * posVec[i, :]
-                sum = torch.sum((pixPlane - posVec_pix) ** 2, 1)
-                tofs = (2 * torch.sqrt(sum)) - self.RP.minDist
+                dist = torch.sum((pixels - posVec_pix) ** 2, 1)
+                tofs = (2 * torch.sqrt(dist)) - self.RP.minDist
 
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
@@ -177,8 +173,8 @@ class Beamformer:
         else:
             for i in range(0, len(BI)):
                 posVec_pix = x * posVec[i, :]
-                sum = torch.sum((pixPlane - posVec_pix) ** 2, 1)
-                tofs = (2 * torch.sqrt(sum)) - self.RP.minDist
+                dist = torch.sum((pixels - posVec_pix) ** 2, 1)
+                tofs = (2 * torch.sqrt(dist)) - self.RP.minDist
 
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
@@ -205,11 +201,13 @@ class Beamformer:
         sceneXY = self.scene.abs().view(x_vals, y_vals)
         plt.clf()
         plt.imshow(sceneXY.detach().cpu().numpy())
+        plt.colorbar()
 
         if path is not None:
             plt.savefig(path)
         if show is True:
-            plt.show()
+            plt.pause(.05)
+            #plt.show()
 
 
 
@@ -233,7 +231,7 @@ class Beamformer:
                 ax.set_xlabel('X')
                 ax.set_ylabel('Y')
                 ax.set_zlabel('Z')
-                plt.show()
+                plt.pause(.05)
 
 
 

@@ -27,9 +27,19 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
             RP.projDataArray.append(pData)
     else:
         for index in BI:
+            #print(index)
             pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
             dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1))
+            #if  ps.requires_grad == True:
+            #    dist.register_hook(lambda x: print("dist gradient" + str(x)))
+            #    RP.hooks.append(dist)
             tau = (dist * 2) / RP.c - RP.minDist/RP.c
+
+
+            #if  ps.requires_grad == True:
+            #    tau.register_hook(lambda x: print("tau gradient" + str(x)))
+            #    RP.hooks.append(tau)
+
             if propLoss is True:
                 wfms = timeDelayBatched(RP, tau) * atten_window
             else:
