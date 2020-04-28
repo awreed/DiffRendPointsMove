@@ -13,6 +13,7 @@ import time
 from VectorDistribution import *
 from Complex import *
 from geomloss import SamplesLoss
+from pytorch3d.loss import chamfer_distance
 import time
 import random
 import collections
@@ -51,7 +52,7 @@ if __name__ == '__main__':
         print("Fix ur cuda loser")
         dev = "cpu"
 
-    BS = 50
+    BS = 40
     #xStart = -1
     #xStop = 1
     #yStart = -1
@@ -68,18 +69,31 @@ if __name__ == '__main__':
     rStop = 1
     zStart = 1
     zStop = 1
-    zStep = 0.1
+    zStep = .1
     sceneDimX = [-.4, .4] # min dist needs to equal max dist
     sceneDimY = [-.4, .4]
     sceneDimZ = [-.4, .4]
     pixDim = [128, 128, 128]
     propLoss = True
-    compute = True
+    compute = False
     show=False
 
     with torch.no_grad():
-        ps_GT = torch.tensor([[-.3, -.3, -.3]], requires_grad=False).to(dev)
-        ps_EST = torch.tensor([[.3, 0.3, .3]], requires_grad=False).to(dev_1)
+        GT_Mesh = ObjLoader('cube_64_bottom_z.obj')
+        GT_Mesh.vertices = GT_Mesh.vertices * 0.3
+        GT_Mesh.getCentroids()
+        EST_Mesh = ObjLoader('cube_64_bottom_z.obj')
+        EST_Mesh.vertices = EST_Mesh.vertices * 0.01
+        EST_Mesh.getCentroids()
+
+        GT = GT_Mesh.centroids
+
+        EST = EST_Mesh.centroids
+        ps_GT = torch.from_numpy(GT).to(dev)
+        ps_EST = torch.from_numpy(EST).to(dev_1)
+
+        #ps_GT = torch.tensor([[-.30, -.30, -.30]], requires_grad=False).to(dev)
+        #ps_EST = torch.tensor([[.30, 0.30, .30]], requires_grad=False).to(dev_1)
 
         #ps_GT = torch.tensor([[0, -.3, -.3]], requires_grad=False).to(dev)
         #ps_EST = torch.tensor([[0, 0.3, .3]], requires_grad=False).to(dev_1)
@@ -87,6 +101,7 @@ if __name__ == '__main__':
         # Data structure for ground truth projector waveforms
         RP_GT = RenderParameters(device=dev)
         #RP_GT.defineProjectorPosSpiral(show=False)
+        print("here")
         RP_GT.defineProjectorPos(thetaStart=thetaStart, thetaStop=thetaStop, thetaStep=thetaStep, rStart=rStart,
                                   rStop=rStop, zStart=zStart, zStop=zStop, zStep=zStep)
         RP_GT.defineSceneDimensions(sceneDimX=sceneDimX, sceneDimY=sceneDimY, sceneDimZ=sceneDimZ, pixDim=pixDim)
@@ -94,11 +109,14 @@ if __name__ == '__main__':
         print("Number of projectors")
         print(RP_GT.numProj)
 
-        #simulateWaveformsBatched(RP_GT, ps_GT, propLoss=propLoss)
-
+        Projs = range(0, RP_GT.numProj)
+        batch = random.sample(Projs, k=BS)
         BF_GT = Beamformer(RP=RP_GT)
-        #BF_GT.Beamform(RP_GT, BI=range(0, RP_GT.numProj), soft=True, z=0.2)
-        #BF_GT.display2Dscene(path='pics6/GT.png', show=False)
+        #simulateWaveformsBatched(RP_GT, ps_GT, propLoss=propLoss)
+        #BF_GT.Beamform(RP_GT, BI=range(0, RP_GT.numProj), soft=True, z=0.0)
+        #BF_GT.display2Dscene(path='pics6/GT_soft.png', show=False)
+        #BF_GT.Beamform(RP_GT, BI=range(0, RP_GT.numProj), soft=False, z=0.0)
+        #BF_GT.display2Dscene(path='pics6/GT_hard.png', show=False)
 
         RP_EST = RenderParameters(device=dev_1)
         #RP_EST.defineProjectorPosSpiral(show=False)
@@ -127,9 +145,12 @@ if __name__ == '__main__':
 
     ps_est = ps_EST.clone()
     ps_est.requires_grad = True
-    lr = .1
+    lr = .01
+    w_l1 = .1
+    w_cs = 100
+    w_wass = 1000
     cs = torch.nn.CosineSimilarity()
-    #optimizer = torch.optim.SGD([ps_est], lr=lr)
+    optimizer = torch.optim.Adam([ps_est], lr=lr)
 
     epochs = 100000
     Projs = range(0, RP_EST.numProj)
@@ -139,54 +160,101 @@ if __name__ == '__main__':
     wiggle = 1.0 * (1 / RP_EST.Fs) * RP_EST.c
     noise = torch.distributions.normal.Normal(torch.tensor([0.0]), torch.tensor([wiggle]))
 
+    fig = plt.figure()
+
     for i in range(0, epochs):
+        optimizer.zero_grad()
         batch = random.sample(Projs, k=BS)
 
         #z = 0.0
         with torch.no_grad():
-            pixels = np.random.choice(RP_EST.numPix3D, size=18000, replace=False)
-            randPixels = RP_EST.pixPos3D[pixels, :]
+            #pixels = np.random.choice(RP_EST.numPix3D, size=18000, replace=False)
+            #randPixels = RP_EST.pixPos3D[pixels, :]
             simulateWaveformsBatched(RP_GT, ps_GT, batch, propLoss=propLoss)
-            GT = BF_GT.Beamform(RP_GT, BI=range(0, len(batch)), soft=True, pixels=randPixels).abs().to(dev_1)
-
+            GT = BF_GT.Beamform(RP_GT, BI=range(0, len(batch)), soft=True, z=0.0).abs().to(dev_1)
+            #print(GT.dtype)
 
         simulateWaveformsBatched(RP_EST, ps_est, batch, propLoss=propLoss)
-        est = BF_EST.Beamform(RP_EST, BI=range(0, len(batch)), soft=True, pixels=randPixels).abs().to(dev_1)
+        est = BF_EST.Beamform(RP_EST, BI=range(0, len(batch)), soft=True, z=0.0).abs().to(dev_1)
+
 
         #BF_GT.display2Dscene(show=False, path='pics6/gt.png')
         #print("EST")
-        #BF_EST.display2Dscene(show=True)
+        #BF_GT.display2Dscene(show=True, ax=ax, title='GT')
+        #BF_EST.display2Dscene(show=True, ax=ax1, title='Estimate')
 
-        est_pdf = est/torch.sum(est)
-        GT_pdf = GT/torch.sum(GT)
+        #est_pdf = est/torch.sum(est)
+        #GT_pdf = GT/torch.sum(GT)
+
+        est_norm = est/torch.norm(est, p=1)
+        GT_norm = GT/torch.norm(GT, p=1)
+
+        BF_EST.sideByside(img1=est_norm, img2=GT_norm, path='pics6/GT_est'+str(i)+'.png', show=False)
+
+        #l1_loss = torch.sum(torch.sqrt((est_norm - GT_norm)**2))
+        #cs_loss = w_cs * (1 - cs(GT_norm.unsqueeze(0), est_norm.unsqueeze(0)))
 
         #pixels = torch.from_numpy(randPixels).to(dev_1)
 
-        #loss = 1 - cs(est_pdf.unsqueeze(0), GT_pdf.unsqueeze(0))
+        #loss = 1 - cs(est_pdf.unsqueeze(0), GT_
+        # ppdf.unsqueeze(0))
         pixels = BF_EST.pixels.type(torch.float64)
 
         pixels = pixels.to(dev_1)
 
-        loss = 100*wass1_loss(est_pdf.unsqueeze(1), pixels, GT_pdf.unsqueeze(1), pixels)
+        wass_loss = w_wass*wass1_loss(est_norm.unsqueeze(1), pixels, GT_norm.unsqueeze(1), pixels)
+
+        #loss = l1_loss + cs_loss + wass_loss
+        #loss = wass_loss
+        #loss = l1_loss
         #loss = torch.sum(torch.abs(est_pdf - GT_pdf))
+        loss = wass_loss
 
         loss.backward()
-        RP_GT.hooks.clear()
-        RP_EST.hooks.clear()
+
+        torch.cuda.set_device(dev)
+        loss_chamfer, _ = chamfer_distance(ps_GT.unsqueeze(0), ps_est.unsqueeze(0).to(dev))
+        loss_chamfer = loss_chamfer * 10
+        #RP_GT.freeHooks()
+        #RP_EST.freeHooks()
+
+        #if i % 10 == 0:
+        #    with torch.no_grad():
+        #        simulateWaveformsBatched(RP_EST, ps_est, propLoss=propLoss)
+        #        BF_EST.Beamform(RP_EST, BI=range(0, RP_EST.numProj), soft=False, z=0.0)
+        #        BF_EST.display2Dscene(path='pics6/est_hard.png', show=False)
+
+        #print("Position: " + str(ps_est.data.cpu().numpy()[0]) + '\t' + "Gradient: " + str(ps_est.grad.data.cpu().numpy()[0] * lr))
+        if i < 100:
+            n = noise.sample(ps_est.shape).squeeze().to(dev_1)
+            ps_est.data[:, 0:2] += n[:, 0:2]
+        ps_est.grad[:, 2] = 0 # Lock the z position of the estimate points
+        #ps_est.data -= lr*ps_est.grad
+        optimizer.step()
+
+        ps_numpy = ps_est.data.detach().cpu().numpy()
+        #dist = torch.norm(ps_est.detach().cpu() - ps_GT.detach().cpu(), p=2)
+        #grad_mag = torch.sqrt(torch.norm(ps_est.grad.data, p=2))
+
+        #vis.line(X=torch.ones((1)).cpu() * i, Y=wass_loss.unsqueeze(0).cpu(), win=loss_window_small, name = 'Wasserstein', update='append')
+        vis.line(X=torch.ones((1)).cpu() * i, Y=wass_loss.unsqueeze(0).cpu(), win=loss_window_small, name = 'L1 Loss', update='append')
+        vis.line(X=torch.ones((1)).cpu() * i, Y=loss_chamfer.unsqueeze(0).cpu(), win=loss_window_small, name = 'CS Loss', update='append')
+        #vis.line(X=torch.ones((1)).cpu() * i, Y=loss.unsqueeze(0).cpu(), win=loss_window_small, name='Total Loss',
+                 #update='append')
+        plt.clf()
+
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(ps_numpy[:, 0], ps_numpy[:, 1], ps_numpy[:, 2])
+        ax.set_xlim3d((-.4, .4))
+        ax.set_ylim3d((-.4, .4))
+        ax.set_zlim3d((-.4, .4))
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        plt.pause(.05)
 
 
-        print("Position: " + str(ps_est.data.cpu().numpy()[0]) + '\t' + "Gradient: " + str(ps_est.grad.data.cpu().numpy()[0] * lr))
-
-        ps_est.data -= noise.sample(ps_est.shape).squeeze().to(dev_1)
-        ps_est.data -= lr*ps_est.grad
-
-        dist = torch.norm(ps_est.detach().cpu() - ps_GT.detach().cpu(), p=2)
-        grad_mag = torch.sqrt(torch.norm(ps_est.grad.data, p=2))
-
-        vis.line(X=torch.ones((1)).cpu() * i, Y=loss.unsqueeze(0).cpu(), win=loss_window_small, name = 'Wasserstein', update='append')
-        vis.line(X=torch.ones((1)).cpu() * i, Y=grad_mag.unsqueeze(0).cpu(), win=loss_window_small, name = 'Grad Mag', update='append')
-        vis.line(X=torch.ones((1)).cpu() * i, Y=dist.unsqueeze(0).cpu(), win=loss_window_small, name = 'Euc. Dist.', update='append')
-        ps_est.grad.data.zero_()
+        #ps_est.grad.data.zero_()
 
 
 

@@ -23,8 +23,8 @@ class Beamformer:
         #self.window = self.sincWindow(self.RP)
         #self.window = self.heavySideStep()
         #self.window = self.gaussianWindow(self.RP)
-        self.window = self.linearStepWindow(1)
-        #self.window = self.linearWindow()
+        #self.window = self.linearStepWindow(1)
+        self.window = self.expWindow()
 
         self.scene = None
 
@@ -32,18 +32,18 @@ class Beamformer:
         self.sceneDimY = self.RP.sceneDimY
         self.sceneDimZ = self.RP.sceneDimZ
 
-        self.nPix = self.RP.pixDim
+        #self.nPix = self.RP.pixDim
 
         self.xVect = self.RP.xVect
         self.yVect = self.RP.yVect
         self.zVect = self.RP.zVect
 
         self.numPix = self.RP.numPix
-        self.sceneCenter = self.RP.sceneCenter
+        #self.sceneCenter = self.RP.sceneCenter
         self.pixPos = self.RP.pixPos
         # Convert pixel positions to tensor
         self.pixPos = torch.from_numpy(self.pixPos)
-        self.pixPos = self.pixPos.type(torch.float32).to(self.dev)
+        self.pixPos = self.pixPos.type(torch.float64).to(self.dev)
         self.pixPos.requires_grad = False
         self.pixels = None
 
@@ -68,8 +68,8 @@ class Beamformer:
         for ind in range(0, self.RP.nSamples):
             left = torch.linspace(0, 1, ind)
             right = torch.linspace(1, 0, int(self.RP.nSamples-ind))
-            left[0:-1] = left[0:-1]*w
-            right[1:] = right[1:]*w
+            #left[0:-1] = left[0:-1]*w
+            #right[1:] = right[1:]*w
             window = torch.cat((left, right), 0)
             full_window.append(window)
 
@@ -81,9 +81,9 @@ class Beamformer:
         return window
 
     # Pre-compute matrix of soft index values for
-    def linearWindow(self):
+    def expWindow(self):
         full_window = []
-        sigma = 1
+        sigma = 6
 
         for ind in range(0, self.RP.nSamples):
             left = torch.linspace(0, 1, ind)
@@ -91,10 +91,13 @@ class Beamformer:
             windowLeft = torch.exp(sigma*left) - torch.ones_like(left)
             windowRight = torch.exp(sigma*right) - torch.ones_like(right)
             window = torch.cat((windowLeft, windowRight), 0)
+            window = window/torch.max(window)
             full_window.append(window)
+
         #plt.clf()
-        #plt.stem(full_window[250].detach().cpu().numpy(), use_line_collection=True)
+        #plt.stem(full_window[500].detach().cpu().numpy())
         #plt.show()
+
 
         window = torch.stack(full_window).to(self.RP.dev)
 
@@ -145,9 +148,11 @@ class Beamformer:
             pixels.requires_grad = False
 
         if pixels is None and z is not None:
+            #pixels = self.pixPos
             zTorch = (torch.ones(self.numPix) * z).unsqueeze(1).to(self.dev)
+            zTorch = zTorch.type(torch.float64)
 
-            #pixels = torch.cat((zTorch, self.pixPos), 1)
+            pixels = torch.cat((zTorch, self.pixPos), 1)
             pixels = torch.cat((self.pixPos, zTorch), 1)
             pixels.requires_grad = False
 
@@ -158,14 +163,18 @@ class Beamformer:
         if soft == True:
             for i in range(0, len(BI)):
                 posVec_pix = x * posVec[i, :]
+                #print(posVec_pix.dtype)
                 dist = torch.sum((pixels - posVec_pix) ** 2, 1)
                 tofs = (2 * torch.sqrt(dist)) - self.RP.minDist
+                #print(tofs.dtype)
 
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
                 # Multiply by window to index particular time
                 real = torch.sum(wfmData[i, :, 0] * self.window[tof_ind, :], dim=1)
                 imag = torch.sum(wfmData[i, :, 1] * self.window[tof_ind, :], dim=1)
+                #print(real.dtype)
+                #print(imag.dtype)
 
                 pixGridReal.append(real)
                 pixGridImag.append(imag)
@@ -191,6 +200,32 @@ class Beamformer:
         self.scene = Complex(real=real_full, imag=imag_full)
         return self.scene
 
+    def sideByside(self, **kwargs):
+        img1 = kwargs.get('img1', None)
+        img2 = kwargs.get('img2', None)
+        path = kwargs.get('path', None)
+        show = kwargs.get('show', None)
+
+        x_vals = torch.unique(self.pixPos[:, 0]).numel()
+        y_vals = torch.unique(self.pixPos[:, 1]).numel()
+
+        img1 = img1.view(x_vals, y_vals)
+        img2 = img2.view(x_vals, y_vals)
+
+        img1 = img1.detach().cpu().numpy()
+        img2 = img2.detach().cpu().numpy()
+
+        combined = np.hstack((img1, img2))
+
+        plt.clf()
+        plt.imshow(combined)
+        #plt.colorbar()
+
+        if show:
+            plt.pause(.05)
+        if path:
+            plt.savefig(path)
+
     def display2Dscene(self, **kwargs):
         path = kwargs.get('path', None)
         show = kwargs.get('show', False)
@@ -201,14 +236,11 @@ class Beamformer:
         sceneXY = self.scene.abs().view(x_vals, y_vals)
         plt.clf()
         plt.imshow(sceneXY.detach().cpu().numpy())
-        plt.colorbar()
 
         if path is not None:
             plt.savefig(path)
         if show is True:
-            plt.pause(.05)
-            #plt.show()
-
+            plt.show()
 
 
     def displayScene(self, **kwargs):

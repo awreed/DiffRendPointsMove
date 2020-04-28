@@ -27,12 +27,14 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
             RP.projDataArray.append(pData)
     else:
         for index in BI:
-            #print(index)
             pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
+            #if ps.requires_grad:
+            #    h = ps.register_hook(lambda x: print("ps gradient" + str(x)))
+            #    RP.hooks.append(h)
             dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1))
-            #if  ps.requires_grad == True:
-            #    dist.register_hook(lambda x: print("dist gradient" + str(x)))
-            #    RP.hooks.append(dist)
+            #if ps.requires_grad:
+            #    h = dist.register_hook(lambda x: print("dist gradient" + str(x)))
+            #    RP.hooks.append(h)
             tau = (dist * 2) / RP.c - RP.minDist/RP.c
 
 

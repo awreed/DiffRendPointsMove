@@ -79,22 +79,26 @@ class RenderParameters:
 
 
     def defineSceneDimensions(self, **kwargs):
-        self.sceneDimX = kwargs.get('sceneDimX', [-.4, .4])
-        self.sceneDimY = kwargs.get('sceneDimY', [-.4, .4])
-        self.sceneDimZ = kwargs.get('sceneDimZ', [0, 0])
+        self.sceneDimX = kwargs.get('sceneDimX', None)
+        self.sceneDimY = kwargs.get('sceneDimY', None)
+        self.sceneDimZ = kwargs.get('sceneDimZ', None)
 
         assert abs(self.sceneDimX[0]) == abs(self.sceneDimX[1]), "abs(sceneDimX[0]) != abs(sceneDimX[1])"
         assert abs(self.sceneDimY[0]) == abs(self.sceneDimY[1]), "abs(sceneDimY[0]) != abs(sceneDimY[1])"
         assert abs(self.sceneDimZ[0]) == abs(self.sceneDimZ[1]), "abs(sceneDimZ[0]) != abs(sceneDimZ[1])"
 
-        self.pixDim = kwargs.get('pixDim', [128, 128, 1])
+        self.pixDim = kwargs.get('pixDim', None)
 
         self.xVect = np.linspace(self.sceneDimX[0], self.sceneDimX[1], self.pixDim[0])
         self.yVect = np.linspace(self.sceneDimY[0], self.sceneDimY[1], self.pixDim[1])
         self.zVect = np.linspace(self.sceneDimZ[0], self.sceneDimZ[1], self.pixDim[2])
+        #print(self.xVect)
+        #print(self.yVect)
+        #print(self.zVect)
 
         self.numPix = np.size(self.xVect) * np.size(self.yVect)
         self.numPix3D = np.size(self.xVect) * np.size(self.yVect) * np.size(self.zVect)
+        print("number pixels")
         print(self.numPix3D)
         self.sceneCenter = np.array([np.median(self.xVect), np.median(self.yVect), np.median(self.zVect)])
         (x, y) = np.meshgrid(self.xVect, self.yVect)
@@ -110,6 +114,7 @@ class RenderParameters:
         # Find all edges of scene
         compute = kwargs.get('compute', True)
         if compute:
+            print("here")
             edgeIndices = np.where(np.logical_or(self.pixPos3D[:, 0] == abs(self.sceneDimX[0]), self.pixPos3D[:, 1] == abs(self.sceneDimY[0]),
             self.pixPos3D[:, 2] == abs(self.sceneDimZ[0])))
 
@@ -138,12 +143,13 @@ class RenderParameters:
             self.nSamples = math.ceil(self.tDur * self.Fs)
             self.nSamples = self.nSamples + 50 # Hack to get optimization to work
             self.nSamples = int(math.ceil(self.nSamples/100.0))*100 # round to nearest hundred
+            self.nSamples = 2000
             #self.nSamples = 600
             print(self.nSamples)
         else:
-            self.minDist = 0.8686349512375218
-            self.tDur = 0.007467797273989506
-            self.nSamples = 600
+            self.minDist = 0
+            self.tDur = .02
+            self.nSamples = 2000
 
         sig = np.zeros(self.nSamples)  # Allocate entire receive signal
         #sig[0] = 1
@@ -306,5 +312,11 @@ class RenderParameters:
             plt.show()
         self.projectors = torch.from_numpy(projectors).to(self.dev)
         self.projectors.requires_grad = True
+
+    def freeHooks(self, **kwargs):
+        N = len(self.hooks)
+        for i in range(0, N):
+            tmp = self.hooks[i]
+            tmp.remove()
 
 
