@@ -16,6 +16,8 @@ class RenderParameters:
         #self.tDur = kwargs.get('tDur', .02)
         #self.nSamples = int(self.Fs * self.tDur)
         self.nSamples = None # Computed under generateTransmitSignal()
+        self.GTPlots = []
+        self.ESTPlots = []
 
         self.dev = kwargs.get('device', None)
 
@@ -76,6 +78,12 @@ class RenderParameters:
         self.pixPos = None
         self.minDist = None
         self.maxDist = None
+
+    def GTSave(self, x):
+        self.GTPlots.append(x)
+
+    def ESTSave(self, x):
+        self.ESTPlots.append(x)
 
 
     def defineSceneDimensions(self, **kwargs):
@@ -209,8 +217,8 @@ class RenderParameters:
         self.thetaStart = kwargs.get('thetaStart', 0)
         self.thetaStop = kwargs.get('thetaStop', 359)
         self.thetaStep = kwargs.get('thetaStep', 1)
-        self.zStart = kwargs.get('zStart', -0.4)
-        self.zStop = kwargs.get('zStop', 0.4)
+        self.zStart = kwargs.get('zStart', 1)
+        self.zStop = kwargs.get('zStop', 1.5)
         self.zStep = kwargs.get('zStep', 0.001)
         self.rMax = 1.000
 
@@ -246,11 +254,11 @@ class RenderParameters:
         #r = self.rMax
         #for i in range(0, self.numZs):
         #    projectors[count, :] = [self.zs[i], r * math.cos(np.deg2rad(theta)),
-        #                            r * math.sin(np.deg2rad(theta))]
+                                    #r * math.sin(np.deg2rad(theta))]
         #    count = count + 1
         #    theta += self.thetaStep
 
-        #    if theta % self.thetaStop == 0:
+        #   if theta % self.thetaStop == 0:
         #        theta = self.thetaStart
 
 
@@ -304,11 +312,14 @@ class RenderParameters:
                                             self.rs[j] * math.sin(np.deg2rad(self.thetas[i])), self.zs[k]]
                     count = count + 1
 
+
         if show == True:
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
             ax.scatter(projectors[:, 0], projectors[:, 1], projectors[:, 2])
-            ax.x_label
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
             plt.show()
         self.projectors = torch.from_numpy(projectors).to(self.dev)
         self.projectors.requires_grad = True
@@ -318,5 +329,7 @@ class RenderParameters:
         for i in range(0, N):
             tmp = self.hooks[i]
             tmp.remove()
+        self.GTPlots.clear()
+        self.ESTPlots.clear()
 
 

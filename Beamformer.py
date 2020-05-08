@@ -12,6 +12,8 @@ import scipy
 #torch.set_default_tensor_type('torch.cuda.FloatTensor')
 import time
 from Complex import *
+import scipy.misc
+from PIL import Image
 
 
 class Beamformer:
@@ -23,8 +25,8 @@ class Beamformer:
         #self.window = self.sincWindow(self.RP)
         #self.window = self.heavySideStep()
         #self.window = self.gaussianWindow(self.RP)
-        #self.window = self.linearStepWindow(1)
-        self.window = self.expWindow()
+        self.window = self.linearStepWindow(1)
+        #self.window = self.expWindow()
 
         self.scene = None
 
@@ -135,6 +137,12 @@ class Beamformer:
             projWfmList.append(RP.projDataArray[i].wfmRC.vector())
         posVec = torch.stack(posVecList).to(RP.dev)
         wfmData = torch.stack(projWfmList).to(RP.dev)
+        if wfmData.requires_grad == False:
+           RP.GTSave(wfmData)
+        if wfmData.requires_grad == True:
+            RP.ESTSave(wfmData)
+            h = wfmData.register_hook(lambda x: RP.ESTSave(x))
+            RP.hooks.append(h)
 
         pixGridReal = []
         pixGridImag = []
@@ -152,7 +160,7 @@ class Beamformer:
             zTorch = (torch.ones(self.numPix) * z).unsqueeze(1).to(self.dev)
             zTorch = zTorch.type(torch.float64)
 
-            pixels = torch.cat((zTorch, self.pixPos), 1)
+            #pixels = torch.cat((zTorch, self.pixPos), 1)
             pixels = torch.cat((self.pixPos, zTorch), 1)
             pixels.requires_grad = False
 
@@ -172,7 +180,11 @@ class Beamformer:
 
                 # Multiply by window to index particular time
                 real = torch.sum(wfmData[i, :, 0] * self.window[tof_ind, :], dim=1)
+
+
+
                 imag = torch.sum(wfmData[i, :, 1] * self.window[tof_ind, :], dim=1)
+
                 #print(real.dtype)
                 #print(imag.dtype)
 
@@ -189,6 +201,8 @@ class Beamformer:
 
                 # Select index directly, not differentiable
                 real = wfmData[i, tof_ind, 0]
+
+
                 imag = wfmData[i, tof_ind, 1]
 
                 pixGridReal.append(real)
@@ -203,6 +217,7 @@ class Beamformer:
     def sideByside(self, **kwargs):
         img1 = kwargs.get('img1', None)
         img2 = kwargs.get('img2', None)
+        img3 = kwargs.get('img3', None)
         path = kwargs.get('path', None)
         show = kwargs.get('show', None)
 
@@ -211,31 +226,40 @@ class Beamformer:
 
         img1 = img1.view(x_vals, y_vals)
         img2 = img2.view(x_vals, y_vals)
+        img3 = img3.view(x_vals, y_vals)
 
         img1 = img1.detach().cpu().numpy()
         img2 = img2.detach().cpu().numpy()
+        img3 = img3.detach().cpu().numpy()
 
-        combined = np.hstack((img1, img2))
+        img1 = (img1 - np.min(img1))/(np.max(img1) - np.min(img1))
+        img2 = (img2 - np.min(img2)) / (np.max(img2) - np.min(img2))
+        img3 = (img3 - np.min(img3)) / (np.max(img3) - np.min(img3))
 
-        plt.clf()
+        combined = np.hstack((img1, img2, img3))
+
         plt.imshow(combined)
-        #plt.colorbar()
 
-        if show:
-            plt.pause(.05)
+        #if show:
+        #    plt.pause(.05)
         if path:
             plt.savefig(path)
+            plt.clf()
 
     def display2Dscene(self, **kwargs):
         path = kwargs.get('path', None)
         show = kwargs.get('show', False)
+        scene=kwargs.get('scene', None)
 
-        x_vals = torch.unique(self.pixPos[:, 0]).numel()
-        y_vals = torch.unique(self.pixPos[:, 1]).numel()
+        x_vals = torch.unique(self.pixels[:, 0]).numel()
+        y_vals = torch.unique(self.pixels[:, 1]).numel()
 
-        sceneXY = self.scene.abs().view(x_vals, y_vals)
+        sceneXY = scene.view(x_vals, y_vals)
+
+        #sceneXY = self.scene.abs().view(x_vals, y_vals)
         plt.clf()
         plt.imshow(sceneXY.detach().cpu().numpy())
+        plt.colorbar()
 
         if path is not None:
             plt.savefig(path)
@@ -248,21 +272,32 @@ class Beamformer:
         real = kwargs.get('real', False)
         imag = kwargs.get('imag', False)
         mag = kwargs.get('mag', True)
+        ax = kwargs.get('ax', None)
 
         sceneReal = self.scene.real.detach().cpu().numpy()
         sceneImag = self.scene.imag.detach().cpu().numpy()
         sceneMag = self.scene.abs().detach().cpu().numpy()
 
-        pixels = self.pixPos.detach().cpu().numpy()
+        pixels = self.pixels.detach().cpu().numpy()
+        u = np.mean(sceneMag)
+        std = np.std(sceneMag)
+        #print(u)
+        #print(std)
+        w = 1
+        sceneMag[sceneMag[:] < u + w*std] = np.nan
+        #print(np.count_nonzero(~np.isnan(sceneMag)))
 
         if dim == 3:
             if mag == True:
-                fig = plt.figure()
-                ax = fig.add_subplot(111, projection='3d')
+                ax.clear()
                 ax.scatter(pixels[:, 0], pixels[:, 1], pixels[:, 2], c=sceneMag, alpha=0.5)
+                ax.set_xlim3d((-.4, .4))
+                ax.set_ylim3d((-.4, .4))
+                ax.set_zlim3d((-.4, .4))
                 ax.set_xlabel('X')
                 ax.set_ylabel('Y')
                 ax.set_zlabel('Z')
+
                 plt.pause(.05)
 
 

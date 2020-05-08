@@ -33,23 +33,11 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None, gt=False):
                 else:
                     tsd_scaled = tsd
 
-
                 pData.wfms.append(tsd_scaled)
 
             pData.wfm = torch.sum(torch.stack(pData.wfms), 0)
-            #wfm = torch.sum(torch.stack(pData.wfms), 0)
-            # try:
-            #    h = pData.wfm.register_hook(lambda x: print("wfm " + str(x.device) + str(x.data)))
-            #    RP.hooks.append(h)
-            # except RuntimeError:
-            #    pass
 
             pData.RCTorch(RP)
-
-            #if gt is False:
-            #    plt.clf()
-            #    plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
-            #    plt.show()
 
             RP.projDataArray.append(pData)
     else:

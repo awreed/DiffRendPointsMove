@@ -19,7 +19,9 @@ from batch_time_delay import *
 from utils import *
 import visdom
 import random
+from PIL import Image
 from geomloss import SamplesLoss
+from UpsamplePixels import UpsamplePixels
 
 np.random.seed(0)
 random.seed(0)
@@ -29,7 +31,7 @@ def plot_pointcloud(mesh, fig, ax, angle, title=""):
     points = sample_points_from_meshes(mesh, 5000)
     x, y, z = points.clone().detach().cpu().squeeze().unbind(1)
     ax.clear()
-    ax.scatter3D(x, z, -y)
+    ax.scatter3D(x, y, z)
 
     ax.set_xlabel('x')
     ax.set_ylabel('z')
@@ -73,13 +75,13 @@ if __name__ == '__main__':
     thetaStep = 1
     rStart = 1
     rStop = 1
-    zStart = 1
-    zStop = 1.5
-    zStep = .001
+    zStart = -1
+    zStop = 1
+    zStep = .01
     sceneDimX = [-.4, .4]
     sceneDimY = [-.4, .4]
     sceneDimZ = [-.4, .4]
-    pixDim = [255, 255, 255]
+    pixDim = [25, 25, 25]
     propLoss = True
 
     fig = plt.figure(figsize=(5, 5))
@@ -114,7 +116,7 @@ if __name__ == '__main__':
         torch.cuda.set_device(dev_1)
         #src_mesh = getMesh(path=path, device=dev_1, scale=.01)
         src_mesh = ico_sphere(4, dev_1)
-        src_mesh = src_mesh.scale_verts(0.2)
+        src_mesh = src_mesh.scale_verts(0.25)
 
         #plot_pointcloud(src_mesh)
 
@@ -125,14 +127,9 @@ if __name__ == '__main__':
         RP_EST.generateTransmitSignal(compute=True)
 
         BF_EST = Beamformer(RP=RP_EST)
-
-
         ######################################################################
 
         ############Setup stuff ######################################
-
-
-
         vis = visdom.Visdom()
         loss_window = vis.line(
             Y=torch.zeros((1)).cpu(),
@@ -142,6 +139,7 @@ if __name__ == '__main__':
         noise = torch.distributions.normal.Normal(torch.tensor([0.0]), torch.tensor([wiggle]))
         epochs = 100000
         w_L1 = 1.0
+        l2_weight = 10.0
         w_wass = 1000.0
         w_edge = 1.0
         w_normal = 0.1
@@ -160,108 +158,97 @@ if __name__ == '__main__':
 
     deform_verts = torch.full(src_mesh.verts_packed().shape, 0.0, device=dev_1, requires_grad=True)
     print(deform_verts.shape)
-    wass1_loss = SamplesLoss(loss="sinkhorn", p=1, blur=.01, diameter=1.0)
-    optimizer = torch.optim.Adam([deform_verts], lr=.001)
+
     lr = .01
+    #wass1_loss = SamplesLoss(loss="sinkhorn", p=1, blur=.01, diameter=1.0)
+    optimizer = torch.optim.Adam([deform_verts], lr=lr)
+
     numberZs = 20
+    plane_thresh = .02
 
+    randPixels = RP_EST.pixPos3D
 
+    fig2 = plt.figure()
+    ax2 = fig2.add_subplot(111, projection='3d')
 
-    for i in range(0, epochs):
+    for i in range(1, epochs):
         #for j in range(0, numberZs):
         optimizer.zero_grad()
 
+        #z = np.random.choice(RP_EST.zVect)
+
         new_src_mesh = src_mesh.offset_verts(deform_verts)
 
-        full_batch = random.sample(Projs, k=BS)
-        batches = list(batchFromList(full_batch, 60))
+        batch = random.sample(Projs, k=BS)
 
-        losses = []
+        torch.cuda.set_device(dev)
+        sample_trg = sample_points_from_meshes(trg_mesh, numPoints).squeeze().to(dev)
+        torch.cuda.set_device(dev_1)
+        sample_src = sample_points_from_meshes(new_src_mesh, numPoints).squeeze().to(dev_1)
 
-        pixels = np.random.choice(RP_EST.numPix3D, size=18000, replace=False)
-        randPixels = RP_EST.pixPos3D[pixels, :]
+        with torch.no_grad():
+            simulateWaveformsBatched(RP_GT, sample_trg, batch, propLoss=True)
+            GT = BF_GT.Beamform(RP_GT, BI=range(0, len(batch)), soft=True, pixels=randPixels).abs().to(dev_1)
+        ################## Calculate L1 Loss between beamforme images ###################
+        simulateWaveformsBatched(RP_EST, sample_src, batch, propLoss=True)
+        est = BF_EST.Beamform(RP_EST, BI=range(0, len(batch)), soft=True, pixels=randPixels).abs().to(dev_1)
 
-        for batch in batches:
-            torch.cuda.set_device(dev)
-            sample_trg = sample_points_from_meshes(trg_mesh, numPoints).squeeze().to(dev)
-            torch.cuda.set_device(dev_1)
-            sample_src = sample_points_from_meshes(new_src_mesh, numPoints).squeeze().to(dev_1)
+        BF_EST.displayScene(ax=ax2)
 
-            with torch.no_grad():
-                simulateWaveformsBatched(RP_GT, sample_trg, batch, propLoss=True)
-                GT = BF_GT.Beamform(RP_GT, BI=range(0, len(batch)), soft=True, pixels=randPixels).abs().to(dev_1)
-            ################## Calculate L1 Loss between beamforme images ###################
-            #z = np.random.choice(RP_EST.zVect)
+        est_norm = est / torch.norm(est, p=1)
+        GT_norm = GT / torch.norm(GT, p=1)
 
-            simulateWaveformsBatched(RP_EST, sample_src, batch, propLoss=True)
-            est = BF_EST.Beamform(RP_EST, BI=range(0, len(batch)), soft=True, pixels=randPixels).abs().to(dev_1)
+        l2_loss = l2_weight*torch.sum(torch.sqrt((est_norm - GT_norm)**2))
 
-            #est_norm = est / torch.norm(est, p=2)
-            #GT_norm = GT / torch.norm(GT, p=2)
+        # and (b) the edge length of the predicted mesh
+        loss_edge = w_edge * mesh_edge_loss(new_src_mesh)
 
-            est_pdf = est/torch.sum(est)
-            GT_pdf = GT/torch.sum(GT)
+        # mesh normal consistency
+        loss_normal = w_normal * mesh_normal_consistency(new_src_mesh)
 
-            #pixels = torch.from_numpy(randPixels).to(dev_1)
-            pixels = BF_EST.pixels.type(torch.float64)
-            pixels = pixels.to(dev_1)
+        # mesh laplacian smoothing
+        loss_laplacian = w_laplacian * mesh_laplacian_smoothing(new_src_mesh, method="uniform")
 
-            wass_loss = w_wass * wass1_loss(est_pdf.unsqueeze(1), pixels, GT_pdf.unsqueeze(1), pixels)
+        loss = l2_loss + loss_edge + loss_normal + loss_laplacian
 
-            #cosine_loss = 1 - torch.nn.functional.cosine_similarity(est_norm.unsqueeze(0), GT_norm.unsqueeze(0))
+        loss.backward()
 
-            #L1 = w_L1 * cosine_loss
-            #L1 = w_L1 * wass_loss
-
-            # and (b) the edge length of the predicted mesh
-            #loss_edge = w_edge * mesh_edge_loss(new_src_mesh)
-
-            # mesh normal consistency
-            #loss_normal = w_normal * mesh_normal_consistency(new_src_mesh)
-
-            # mesh laplacian smoothing
-            #loss_laplacian = w_laplacian * mesh_laplacian_smoothing(new_src_mesh, method="uniform")
-            loss = wass_loss
-            losses.append(loss)
-
-            #print('Total loss: ' + str(loss.data))
-
-            loss.backward()
-
-        #if i % plot_period == 0:
-        #optimizer.step()
-        #if i % 10 == 0:
-        #if i < 200:
-        deform_verts.data += noise.sample(deform_verts.shape).squeeze().to(dev_1)
+        #print(deform_verts.grad.shape)
+        #deform_verts.grad[:, 2] = 0 # Zero out the z component of the gradient
+        numpy_deform_verts = deform_verts.detach().cpu().numpy()
+        #print(numpy_deform_verts)
 
         optimizer.step()
 
-        #deform_verts.data -= lr*deform_verts.grad
-        #deform_verts.grad.data.zero_()
+        if i % 100 == 0:
+            text = input("Upsample pixels?")
+            if text == 'y':
+                with torch.no_grad():
+        # simulateWaveformsBatched(RP_EST, ps_est, range(0, RP_EST.numProj), propLoss=propLoss)
+                    randPixels = UpsamplePixels(RP=RP_EST, BF=BF_EST, batch=batch)
+                print("YES")
+            elif text == 'n':
+                print('NO')
+            else:
+                print("What")
 
         torch.cuda.set_device(dev)
         loss_chamfer, _ = chamfer_distance(sample_trg.unsqueeze(0), sample_src.unsqueeze(0).to(dev))
         loss_chamfer = loss_chamfer*100
 
-        total_loss = torch.sum(torch.stack(losses))
-
-        losses.clear()
-
-        vis.line(X=torch.ones((1)).cpu() * i, Y=total_loss.unsqueeze(0).cpu(), win=loss_window, name='Wass Loss', update='append')
+        vis.line(X=torch.ones((1)).cpu() * i, Y=loss.unsqueeze(0).cpu(), win=loss_window, name='L2 Loss', update='append')
         vis.line(X=torch.ones((1)).cpu() * i, Y=loss_chamfer.unsqueeze(0).cpu(), win=loss_window, name='Chamfer Loss', update='append')
-        #vis.line(X=torch.ones((1)).cpu() * i, Y=loss_normal.unsqueeze(0).cpu(), win=loss_window, name='loss_normal',update='append')
-        #vis.line(X=torch.ones((1)).cpu() * i, Y=loss_laplacian.unsqueeze(0).cpu(), win=loss_window, name='loss_laplacian', update='append')
-
-        #BF_GT.display2Dscene(show=True)
+        vis.line(X=torch.ones((1)).cpu() * i, Y=loss_normal.unsqueeze(0).cpu(), win=loss_window, name='loss_normal',update='append')
+        vis.line(X=torch.ones((1)).cpu() * i, Y=loss_laplacian.unsqueeze(0).cpu(), win=loss_window, name='loss_laplacian', update='append')
+        vis.line(X=torch.ones((1)).cpu() * i, Y=loss_edge.unsqueeze(0).cpu(), win=loss_window,name='loss_edge', update='append')
+            #BF_GT.display2Dscene(show=True)
 
         torch.cuda.set_device(dev_1)
         plot_pointcloud(new_src_mesh, fig, ax, (i * 20) % 360, title="iter: %d" % i)
         torch.cuda.set_device(dev)
         plot_pointcloud(trg_mesh, fig1, ax1, (i * 20) % 360, title="GT")
 
-
-
-
+        #BF_EST.sideByside(img1=est_norm, img2=GT_norm, path='pics6/GT_est' + str(i) + '.png', show=False)
 
 
 

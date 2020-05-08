@@ -15,6 +15,7 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
             pData = ProjData.ProjData(projPos=RP.projectors[i, :], Fs=RP.Fs, tDur=RP.tDur)
             dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1))
             tau = (dist * 2) / RP.c - RP.minDist/RP.c
+
             if propLoss is True:
                 wfms = timeDelayBatched(RP, tau)*atten_window
             else:
@@ -26,12 +27,18 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
             #plt.show()
             RP.projDataArray.append(pData)
     else:
+
         for index in BI:
             pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
+
             #if ps.requires_grad:
+            #    print("NEW section")
+            #    print("Projector pos: " + str(pData.projPos))
+            #    print("Point pos: " + str(ps[:, :]))
             #    h = ps.register_hook(lambda x: print("ps gradient" + str(x)))
             #    RP.hooks.append(h)
             dist = torch.sqrt(torch.sum((pData.projPos.repeat(numScat, 1) - ps[:, :])**2, 1))
+
             #if ps.requires_grad:
             #    h = dist.register_hook(lambda x: print("dist gradient" + str(x)))
             #    RP.hooks.append(h)
@@ -39,8 +46,8 @@ def simulateWaveformsBatched(RP, ps, BI=None, propLoss=False):
 
 
             #if  ps.requires_grad == True:
-            #    tau.register_hook(lambda x: print("tau gradient" + str(x)))
-            #    RP.hooks.append(tau)
+            #    h = tau.register_hook(lambda x: print("tau gradient" + str(x)))
+            #    RP.hooks.append(h)
 
             if propLoss is True:
                 wfms = timeDelayBatched(RP, tau) * atten_window
