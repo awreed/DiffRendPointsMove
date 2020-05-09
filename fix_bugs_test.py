@@ -134,7 +134,7 @@ if __name__ == '__main__':
 
     ps_est = ps_EST.clone()
     ps_est.requires_grad = True
-    lr = .01
+    lr = .005
     w_l1 = 10
     w_cs = 100
     w_wass = 10
@@ -252,15 +252,15 @@ if __name__ == '__main__':
         #vis.line(X=torch.ones((1)).cpu() * i, Y=loss.unsqueeze(0).cpu(), win=loss_window_small, name='Total Loss',
                  #update='append')
 
-        #ax1.clear()
-        #ax1.scatter(ps_numpy[:, 0], ps_numpy[:, 1], ps_numpy[:, 2])
-        #ax1.set_xlim3d((-.4, .4))
-        #ax1.set_ylim3d((-.4, .4))
-        #ax1.set_zlim3d((-.4, .4))
-        #ax1.set_xlabel('X')
-        #ax1.set_ylabel('Y')
-        #ax1.set_zlabel('Z')
-        #plt.pause(.05)
+        ax1.clear()
+        ax1.scatter(ps_numpy[:, 0], ps_numpy[:, 1], ps_numpy[:, 2])
+        ax1.set_xlim3d((-.4, .4))
+        ax1.set_ylim3d((-.4, .4))
+        ax1.set_zlim3d((-.4, .4))
+        ax1.set_xlabel('X')
+        ax1.set_ylabel('Y')
+        ax1.set_zlabel('Z')
+        plt.pause(.05)
 
 
         #ps_est.grad.data.zero_()

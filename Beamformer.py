@@ -9,7 +9,7 @@ import torch
 from utils import *
 import scipy
 
-#torch.set_default_tensor_type('torch.cuda.FloatTensor')
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 import time
 from Complex import *
 import scipy.misc
@@ -21,12 +21,12 @@ class Beamformer:
         self.RP = kwargs.get('RP', None)
         self.dev = self.RP.dev
 
-        #self.window = self.linearWindow(self.RP)
-        #self.window = self.sincWindow(self.RP)
-        #self.window = self.heavySideStep()
-        #self.window = self.gaussianWindow(self.RP)
+        # self.window = self.linearWindow(self.RP)
+        # self.window = self.sincWindow(self.RP)
+        # self.window = self.heavySideStep()
+        # self.window = self.gaussianWindow(self.RP)
         self.window = self.linearStepWindow(1)
-        #self.window = self.expWindow()
+        # self.window = self.expWindow()
 
         self.scene = None
 
@@ -34,14 +34,14 @@ class Beamformer:
         self.sceneDimY = self.RP.sceneDimY
         self.sceneDimZ = self.RP.sceneDimZ
 
-        #self.nPix = self.RP.pixDim
+        # self.nPix = self.RP.pixDim
 
         self.xVect = self.RP.xVect
         self.yVect = self.RP.yVect
         self.zVect = self.RP.zVect
 
         self.numPix = self.RP.numPix
-        #self.sceneCenter = self.RP.sceneCenter
+        # self.sceneCenter = self.RP.sceneCenter
         self.pixPos = self.RP.pixPos
         # Convert pixel positions to tensor
         self.pixPos = torch.from_numpy(self.pixPos)
@@ -49,17 +49,16 @@ class Beamformer:
         self.pixPos.requires_grad = False
         self.pixels = None
 
-
     def heavySideStep(self):
         full_window = []
         w = 10
         for ind in range(0, self.RP.nSamples):
             left = torch.ones(ind)
-            right = torch.ones(int(self.RP.nSamples-ind))
+            right = torch.ones(int(self.RP.nSamples - ind))
             right[0] = w
             window = torch.cat((left, right), 0)
-            #plt.stem(window.detach().cpu().numpy(), use_line_collection=True)
-            #plt.show()
+            # plt.stem(window.detach().cpu().numpy(), use_line_collection=True)
+            # plt.show()
             full_window.append(window)
 
         window = torch.stack(full_window).to(self.RP.dev)
@@ -69,16 +68,16 @@ class Beamformer:
         full_window = []
         for ind in range(0, self.RP.nSamples):
             left = torch.linspace(0, 1, ind)
-            right = torch.linspace(1, 0, int(self.RP.nSamples-ind))
-            #left[0:-1] = left[0:-1]*w
-            #right[1:] = right[1:]*w
+            right = torch.linspace(1, 0, int(self.RP.nSamples - ind))
+            # left[0:-1] = left[0:-1]*w
+            # right[1:] = right[1:]*w
             window = torch.cat((left, right), 0)
             full_window.append(window)
 
         window = torch.stack(full_window).to(self.RP.dev)
-        #plt.clf()
-        #plt.stem(window[1000, :].detach().cpu().numpy(), use_line_collection=True)
-        #plt.show()
+        # plt.clf()
+        # plt.stem(window[1000, :].detach().cpu().numpy(), use_line_collection=True)
+        # plt.show()
 
         return window
 
@@ -89,17 +88,16 @@ class Beamformer:
 
         for ind in range(0, self.RP.nSamples):
             left = torch.linspace(0, 1, ind)
-            right = torch.linspace(1, 0, int(self.RP.nSamples-ind))
-            windowLeft = torch.exp(sigma*left) - torch.ones_like(left)
-            windowRight = torch.exp(sigma*right) - torch.ones_like(right)
+            right = torch.linspace(1, 0, int(self.RP.nSamples - ind))
+            windowLeft = torch.exp(sigma * left) - torch.ones_like(left)
+            windowRight = torch.exp(sigma * right) - torch.ones_like(right)
             window = torch.cat((windowLeft, windowRight), 0)
-            window = window/torch.max(window)
+            window = window / torch.max(window)
             full_window.append(window)
 
-        #plt.clf()
-        #plt.stem(full_window[500].detach().cpu().numpy())
-        #plt.show()
-
+        # plt.clf()
+        # plt.stem(full_window[500].detach().cpu().numpy())
+        # plt.show()
 
         window = torch.stack(full_window).to(self.RP.dev)
 
@@ -107,7 +105,7 @@ class Beamformer:
 
     def sincWindow(self, RP):
         full_window = []
-        u = torch.linspace(0, RP.nSamples-1, RP.nSamples).detach().cpu().numpy()
+        u = torch.linspace(0, RP.nSamples - 1, RP.nSamples).detach().cpu().numpy()
         for i in range(0, len(u)):
             window = torch.from_numpy(np.sinc(u[i] - u))
             full_window.append(window)
@@ -123,26 +121,27 @@ class Beamformer:
             vals = torch.from_numpy(y_values.pdf(x_values))
             full_window.append(vals)
         return torch.stack(full_window).to(RP.dev)
-        #plt.clf()
-        #plt.stem(x_values, y_values.pdf(x_values), use_line_collection=True)
-        #plt.show()
+        # plt.clf()
+        # plt.stem(x_values, y_values.pdf(x_values), use_line_collection=True)
+        # plt.show()
 
     # 2D/3D Beamformer with option for soft indexing so that its differentiable
-    def Beamform(self, RP, BI = None, soft=True, **kwargs):
+    def Beamform(self, RP, BI=None, soft=True, **kwargs):
         posVecList = []
         projWfmList = []
 
         for i in BI:
             posVecList.append(RP.projDataArray[i].projPos)
-            projWfmList.append(RP.projDataArray[i].wfmRC.vector())
+            projWfmList.append(RP.projDataArray[i].wfm)
         posVec = torch.stack(posVecList).to(RP.dev)
         wfmData = torch.stack(projWfmList).to(RP.dev)
-        if wfmData.requires_grad == False:
-           RP.GTSave(wfmData)
-        if wfmData.requires_grad == True:
-            RP.ESTSave(wfmData)
-            h = wfmData.register_hook(lambda x: RP.ESTSave(x))
-            RP.hooks.append(h)
+
+        #if not wfmData.requires_grad:
+        #    RP.save(key='GTWfm', val=wfmData)
+        #if wfmData.requires_grad:
+        #    RP.save(key='ESTWfm', val=wfmData)
+        #    h = wfmData.register_hook(lambda x: RP.save(key='ESTGrad', val=x))
+        #    RP.hooks.append(h)
 
         pixGridReal = []
         pixGridImag = []
@@ -156,11 +155,11 @@ class Beamformer:
             pixels.requires_grad = False
 
         if pixels is None and z is not None:
-            #pixels = self.pixPos
+            # pixels = self.pixPos
             zTorch = (torch.ones(self.numPix) * z).unsqueeze(1).to(self.dev)
             zTorch = zTorch.type(torch.float64)
 
-            #pixels = torch.cat((zTorch, self.pixPos), 1)
+            # pixels = torch.cat((zTorch, self.pixPos), 1)
             pixels = torch.cat((self.pixPos, zTorch), 1)
             pixels.requires_grad = False
 
@@ -171,25 +170,23 @@ class Beamformer:
         if soft == True:
             for i in range(0, len(BI)):
                 posVec_pix = x * posVec[i, :]
-                #print(posVec_pix.dtype)
+                # print(posVec_pix.dtype)
                 dist = torch.sum((pixels - posVec_pix) ** 2, 1)
                 tofs = (2 * torch.sqrt(dist)) - self.RP.minDist
-                #print(tofs.dtype)
+                # print(tofs.dtype)
 
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
                 # Multiply by window to index particular time
-                real = torch.sum(wfmData[i, :, 0] * self.window[tof_ind, :], dim=1)
+                real = torch.sum(wfmData[i, :] * self.window[tof_ind, :], dim=1)
 
+                # imag = torch.sum(wfmData[i, :] * self.window[tof_ind, :], dim=1)
 
-
-                imag = torch.sum(wfmData[i, :, 1] * self.window[tof_ind, :], dim=1)
-
-                #print(real.dtype)
-                #print(imag.dtype)
+                # print(real.dtype)
+                # print(imag.dtype)
 
                 pixGridReal.append(real)
-                pixGridImag.append(imag)
+                # pixGridImag.append(imag)
         # Delay and sum where indices selected by sampling directly - not differentiable.
         else:
             for i in range(0, len(BI)):
@@ -200,18 +197,22 @@ class Beamformer:
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
                 # Select index directly, not differentiable
-                real = wfmData[i, tof_ind, 0]
+                real = wfmData[i, tof_ind]
 
+                if real.requires_grad:
+                    h = real.register_hook(lambda x: RP.save(key='real', val=x))
+                    RP.hooks.append(h)
 
-                imag = wfmData[i, tof_ind, 1]
+                # imag = wfmData[i, tof_ind, 1]
 
                 pixGridReal.append(real)
-                pixGridImag.append(imag)
+                # pixGridImag.append(imag)
 
         real_full = torch.sum(torch.stack(pixGridReal), 0)
-        imag_full = torch.sum(torch.stack(pixGridImag), 0)
+        # imag_full = torch.sum(torch.stack(pixGridImag), 0)
 
-        self.scene = Complex(real=real_full, imag=imag_full)
+        # self.scene = Complex(real=real_full, imag=imag_full)
+        self.scene = real_full.to(RP.dev)
         return self.scene
 
     def sideByside(self, **kwargs):
@@ -232,7 +233,7 @@ class Beamformer:
         img2 = img2.detach().cpu().numpy()
         img3 = img3.detach().cpu().numpy()
 
-        img1 = (img1 - np.min(img1))/(np.max(img1) - np.min(img1))
+        img1 = (img1 - np.min(img1)) / (np.max(img1) - np.min(img1))
         img2 = (img2 - np.min(img2)) / (np.max(img2) - np.min(img2))
         img3 = (img3 - np.min(img3)) / (np.max(img3) - np.min(img3))
 
@@ -240,7 +241,7 @@ class Beamformer:
 
         plt.imshow(combined)
 
-        #if show:
+        # if show:
         #    plt.pause(.05)
         if path:
             plt.savefig(path)
@@ -249,14 +250,14 @@ class Beamformer:
     def display2Dscene(self, **kwargs):
         path = kwargs.get('path', None)
         show = kwargs.get('show', False)
-        scene=kwargs.get('scene', None)
+        scene = kwargs.get('scene', None)
 
         x_vals = torch.unique(self.pixels[:, 0]).numel()
         y_vals = torch.unique(self.pixels[:, 1]).numel()
 
         sceneXY = scene.view(x_vals, y_vals)
 
-        #sceneXY = self.scene.abs().view(x_vals, y_vals)
+        # sceneXY = self.scene.abs().view(x_vals, y_vals)
         plt.clf()
         plt.imshow(sceneXY.detach().cpu().numpy())
         plt.colorbar()
@@ -265,7 +266,6 @@ class Beamformer:
             plt.savefig(path)
         if show is True:
             plt.show()
-
 
     def displayScene(self, **kwargs):
         dim = kwargs.get('dim', 3)
@@ -281,11 +281,11 @@ class Beamformer:
         pixels = self.pixels.detach().cpu().numpy()
         u = np.mean(sceneMag)
         std = np.std(sceneMag)
-        #print(u)
-        #print(std)
+        # print(u)
+        # print(std)
         w = 1
-        sceneMag[sceneMag[:] < u + w*std] = np.nan
-        #print(np.count_nonzero(~np.isnan(sceneMag)))
+        sceneMag[sceneMag[:] < u + w * std] = np.nan
+        # print(np.count_nonzero(~np.isnan(sceneMag)))
 
         if dim == 3:
             if mag == True:
@@ -299,6 +299,3 @@ class Beamformer:
                 ax.set_zlabel('Z')
 
                 plt.pause(.05)
-
-
-

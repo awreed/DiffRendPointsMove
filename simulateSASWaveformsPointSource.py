@@ -4,6 +4,8 @@ import ProjData
 from timeDelay import *
 from utils import *
 import time
+from delaySignal import *
+from torch.autograd import *
 
 
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -12,46 +14,37 @@ import time
 def simulateSASWaveformsPointSource(RP, ps, BI=None, gt=False):
     shape = ps.shape
     numScat = list(shape)[0]
+
+    delaySignal = DelaySignal.apply
+
+    #print("Num scatterers" + str(numScat))
     RP.projDataArray.clear()
-    psShape = ps.shape
-    dim = list(shape)[1]
-    count = 0
-    const = torch.tensor(2).to(RP.dev)
-    # atten_window = torch.linspace(1, 0, RP.nSamples).to(RP.dev)
+    for index in BI:
+        pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
 
-    if BI is None:
-        for i in range(0, RP.numProj):
-            pData = ProjData.ProjData(projPos=RP.projectors[i, :], Fs=RP.Fs, tDur=RP.tDur)
-            for j in range(0, numScat):
-                t = (torch.sqrt(torch.sum((pData.projPos - ps[j, :]) ** 2) + RP.zs[0] ** 2))
-                tau = (t * 2) / RP.c
+        pData.wfm = delaySignal(ps, pData, RP)
 
-                tsd = torchTimeDelay(RP, tau)
+        #if ps.requires_grad:
+        #    h = ps.register_hook(lambda x: print(x))
+        #    RP.hooks.append(h)
 
-                if gt is True:
-                    tsd_scaled = tsd / (t ** 2)
-                else:
-                    tsd_scaled = tsd
+           # sig = torch.zeros(RP.nSamples)
+           # start = (tau * RP.Fs).long()
+           ## sig[start:start+5] = RP.transmitSignal
+            #if ps.requires_grad == True:
+            ##    sig.requires_grad = True
+             #   h = sig.register_hook(lambda x: RP.save(key='indSig', val=sig))
+             #   RP.hooks.append(h)
 
-                pData.wfms.append(tsd_scaled)
+        #if ps.requires_grad == True:
+        #    h = pData.wfm.register_hook(lambda x: RP.save(key='pDataWfm', val=x))
+        #    RP.hooks.append(h)
 
-            pData.wfm = torch.sum(torch.stack(pData.wfms), 0)
-
-            pData.RCTorch(RP)
-
-            RP.projDataArray.append(pData)
-    else:
-        for index in BI:
-            pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
-            for j in range(0, numScat):
-                t = torch.sqrt(torch.sum((pData.projPos - ps[j, :]) ** 2) + torch.tensor(RP.zs[0]) ** 2)
-
-                tau = (t * 2) / torch.tensor(RP.c, requires_grad=True)
-
-                pData.wfms.append(torchTimeDelay(RP.transmitSignal, torch.tensor(RP.Fs, requires_grad=True),
-                                                 tau, RP))
-
-            pData.wfm = torch.sum(torch.stack(pData.wfms), 0)
-            # print(pData.wfm.shape)
-            pData.RCTorch(RP)
-            RP.projDataArray.append(pData)
+        #pData.wfm = (pData.wfm - pData.wfm.min().detach())/(pData.wfm.max().detach() - pData.wfm.min().detach())
+        #print("here")
+        #plt.clf()
+        #plt.stem(pData.wfm.detach().cpu().numpy(), use_line_collection=True)
+        #plt.show()
+        # print(pData.wfm.shape)
+        #pData.RCTorch(RP)
+        RP.projDataArray.append(pData)

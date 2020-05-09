@@ -20,13 +20,28 @@ def torchTimeDelay(RP, tau):
     w = (2 * math.pi * f).to(RP.dev)
     arg = w*tau
 
+    if arg.requires_grad == True:
+        h = arg.register_hook(lambda x: RP.save(key='arg', val=x))
+        RP.hooks.append(h)
 
     sign = -1.0
     pr = compExp(arg, sign).to(RP.dev)
 
-    X = torch.fft(torchHilbert(RP.transmitSignal, RP), 1)
 
-    tsd = torch.ifft(compMul(X, pr), 1)[:, 0]  # Only return the real values
+
+    #plt.stem(pr.detach().cpu().numpy()[:, 0], use_line_collection=True)
+    #plt.show()
+
+    #X = torch.fft(torchHilbert(RP.transmitSignal, RP), 1).to(RP.dev)
+    X = torch.rfft(RP.transmitSignal, 1, onesided=False).to(RP.dev)
+
+    #plt.clf()
+    #plt.stem(X.detach().cpu().numpy()[:, 0], use_line_collection=True)
+    #plt.show()
+
+    #X = torch.fft(torchHilbert(RP.transmitSignal, RP), 1)
+
+    tsd = torch.irfft(compMul(X, pr), 1, onesided=False).to(RP.dev)  # Only return the real values
 
     return tsd
 

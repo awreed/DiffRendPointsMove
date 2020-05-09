@@ -16,8 +16,8 @@ class RenderParameters:
         #self.tDur = kwargs.get('tDur', .02)
         #self.nSamples = int(self.Fs * self.tDur)
         self.nSamples = None # Computed under generateTransmitSignal()
-        self.GTPlots = []
-        self.ESTPlots = []
+        self.data = {}
+        self.nSamplesTransmit = 20
 
         self.dev = kwargs.get('device', None)
 
@@ -79,11 +79,11 @@ class RenderParameters:
         self.minDist = None
         self.maxDist = None
 
-    def GTSave(self, x):
-        self.GTPlots.append(x)
+    def save(self, **kwargs):
+        key = kwargs.get('key', None)
+        val = kwargs.get('val', None)
 
-    def ESTSave(self, x):
-        self.ESTPlots.append(x)
+        self.data[key] = val
 
 
     def defineSceneDimensions(self, **kwargs):
@@ -115,6 +115,19 @@ class RenderParameters:
         (x, y, z) = np.meshgrid(self.xVect, self.yVect, self.zVect)
         self.pixPos3D = np.hstack((np.reshape(x, (np.size(x), 1)), np.reshape(y, (np.size(y), 1)),
                                    np.reshape(z, (np.size(z), 1))))
+
+    def generateImpulse(self, **kwargs):
+        self.minDist = 0
+        self.tDur = .02
+        self.nSamples = 2000
+
+        sig = np.ones(self.nSamplesTransmit)
+        #sig[0:5] = 1
+        #plt.clf()
+        #plt.stem(sig, use_line_collection=True)
+        #plt.show()
+        self.transmitSignal = torch.from_numpy(sig).to(self.dev)
+        self.transmitSignal.requires_grad = False
 
     def generateTransmitSignal(self, **kwargs):
         # Calculate waveform duration based on scene geometry
@@ -329,7 +342,6 @@ class RenderParameters:
         for i in range(0, N):
             tmp = self.hooks[i]
             tmp.remove()
-        self.GTPlots.clear()
-        self.ESTPlots.clear()
+        self.data.clear()
 
 
