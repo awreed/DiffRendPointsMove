@@ -6,7 +6,7 @@ from utils import *
 import time
 from delaySignal import *
 from torch.autograd import *
-
+import time
 
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
@@ -16,35 +16,26 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None, gt=False):
     numScat = list(shape)[0]
 
     delaySignal = DelaySignal.apply
+    delaySignalBatched = DelaySignalBatched.apply
 
     #print("Num scatterers" + str(numScat))
     RP.projDataArray.clear()
     for index in BI:
         pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
 
-        pData.wfm = delaySignal(ps, pData, RP)
+        #a = time.time()
+        #sig1 = delaySignal(ps, pData, RP)
+        #b = time.time()
+        #sig1 = sig1.detach().cpu().numpy()
 
-        #if ps.requires_grad:
-        #    h = ps.register_hook(lambda x: print(x))
-        #    RP.hooks.append(h)
+        #print(b - a)
 
-           # sig = torch.zeros(RP.nSamples)
-           # start = (tau * RP.Fs).long()
-           ## sig[start:start+5] = RP.transmitSignal
-            #if ps.requires_grad == True:
-            ##    sig.requires_grad = True
-             #   h = sig.register_hook(lambda x: RP.save(key='indSig', val=sig))
-             #   RP.hooks.append(h)
+        #a = time.time()
+        pData.wfm = delaySignalBatched(ps, pData, RP)
+        #b = time.time()
+        #print(b - a)
+        #sig2 = sig2.detach().cpu().numpy()
 
-        #if ps.requires_grad == True:
-        #    h = pData.wfm.register_hook(lambda x: RP.save(key='pDataWfm', val=x))
-        #    RP.hooks.append(h)
+        #print(np.sum(sig1 - sig2))
 
-        #pData.wfm = (pData.wfm - pData.wfm.min().detach())/(pData.wfm.max().detach() - pData.wfm.min().detach())
-        #print("here")
-        #plt.clf()
-        #plt.stem(pData.wfm.detach().cpu().numpy(), use_line_collection=True)
-        #plt.show()
-        # print(pData.wfm.shape)
-        #pData.RCTorch(RP)
         RP.projDataArray.append(pData)

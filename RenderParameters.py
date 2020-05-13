@@ -17,7 +17,7 @@ class RenderParameters:
         #self.nSamples = int(self.Fs * self.tDur)
         self.nSamples = None # Computed under generateTransmitSignal()
         self.data = {}
-        self.nSamplesTransmit = 20
+        self.nSamplesTransmit = 5
 
         self.dev = kwargs.get('device', None)
 

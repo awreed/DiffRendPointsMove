@@ -159,7 +159,7 @@ if __name__ == '__main__':
     deform_verts = torch.full(src_mesh.verts_packed().shape, 0.0, device=dev_1, requires_grad=True)
     print(deform_verts.shape)
 
-    lr = .01
+    lr = .1
     #wass1_loss = SamplesLoss(loss="sinkhorn", p=1, blur=.01, diameter=1.0)
     optimizer = torch.optim.Adam([deform_verts], lr=lr)
 
