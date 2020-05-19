@@ -31,12 +31,13 @@ class ProjData:
 
     def RCTorch(self, RP):
         #nSamples = self.Fs * self.tDur
-        Pulse = RP.Pulse
+        Pulse = RP.pulseWfm
 
 
         # Forward fourier transform of received waveform
         DataHil = torchHilbert(self.wfm, RP)
         Data = torch.fft(DataHil, 1)
+        #Data = self.wfm
 
         # Definition of cross-correlation
         yRC = torch.ifft(compMul(Data, compConj(Pulse)), 1)

@@ -23,18 +23,13 @@ def simulateSASWaveformsPointSource(RP, ps, BI=None, gt=False):
     for index in BI:
         pData = ProjData.ProjData(projPos=RP.projectors[index, :], Fs=RP.Fs, tDur=RP.tDur)
 
-        #a = time.time()
-        #sig1 = delaySignal(ps, pData, RP)
-        #b = time.time()
-        #sig1 = sig1.detach().cpu().numpy()
-
-        #print(b - a)
-
-        #a = time.time()
         pData.wfm = delaySignalBatched(ps, pData, RP)
-        #b = time.time()
-        #print(b - a)
-        #sig2 = sig2.detach().cpu().numpy()
+
+        pData.RCTorch(RP)
+
+        #plt.clf()
+        #plt.stem(pData.wfmRC.abs().detach().cpu().numpy(), use_line_collection=True)
+        #plt.show()
 
         #print(np.sum(sig1 - sig2))
 

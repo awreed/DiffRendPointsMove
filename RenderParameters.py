@@ -133,7 +133,7 @@ class RenderParameters:
         # Calculate waveform duration based on scene geometry
         # Assumes scene center is at
         # Find all edges of scene
-        compute = kwargs.get('compute', True)
+        compute = kwargs.get('compute', False)
         if compute:
             print("here")
             edgeIndices = np.where(np.logical_or(self.pixPos3D[:, 0] == abs(self.sceneDimX[0]), self.pixPos3D[:, 1] == abs(self.sceneDimY[0]),
@@ -182,12 +182,26 @@ class RenderParameters:
         ind2 = ind1 + len(LFM)
         sig[ind1:ind2] = LFM  # Insert chirp into receive signal
 
-        # Convert transmit signal to tensor
-        self.transmitSignal = torch.from_numpy(sig).to(self.dev)
-        self.transmitSignal.requires_grad = False
+        #plt.clf()
+        #plt.stem(sig, use_line_collection=True)
+        #plt.show()
 
-        self.pulse = torchHilbert(self.transmitSignal, self)
-        self.Pulse = torch.fft(self.pulse, 1).to(self.dev) # Complex version of the transmitted signal
+        # Convert transmit signal to tensor
+        #self.transmitSignal = torch.from_numpy(sig).to(self.dev)
+        #self.transmitSignal.requires_grad = False
+        #LFM = torch.from_numpy(LFM).to(self.dev)
+        #LFM.requires_grad = False
+        # Full complex pulse waveform used in autocorrelation(2000 samples)
+        self.pulseWfm = torchHilbert(torch.from_numpy(sig).to(self.dev), self)
+        self.pulseWfm = torch.fft(self.pulseWfm, 1).to(self.dev)
+
+        # Only segment of copmlex pulse waveform (100 samples long)
+        #self.pulse = torchHilbert(self.transmitSignal, self)
+        #self.Pulse = torch.fft(self.pulse, 1).to(self.dev) # Complex version of the transmitted signal
+        self.LFM = torch.from_numpy(LFM)
+        self.transmitSignal = self.LFM.to(self.dev)
+        self.transmitSignal.requires_grad = False
+        self.nSamplesTransmit = len(LFM)
 
 
     def defineProjectorPosGrid(self, **kwargs):

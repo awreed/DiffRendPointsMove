@@ -4,14 +4,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 
+
 def totuple(a):
     try:
         return tuple(totuple(i) for i in a)
     except TypeError:
         return a
 
+
 # Vectorize point operations for speed
 class DelaySignalBatched(Function):
+    """
     @staticmethod
     def forward(ctx, ps, pData, RP):
         ctx.ps = ps.detach().cpu().numpy()
@@ -21,35 +24,97 @@ class DelaySignalBatched(Function):
         ctx.RP = RP
         ctx.tx = RP.transmitSignal.detach().cpu().numpy()
 
-        t = np.sqrt(np.sum((ctx.projPos - ctx.ps[:, :])**2, 1))
-        tau = (t*2)/RP.c
-        startIndeces = (tau*RP.Fs).astype(np.int)
+        t = np.sqrt(np.sum((ctx.projPos - ctx.ps[:, :]) ** 2, 1))
+        tau = (t * 2) / RP.c
+        startIndeces = (tau * RP.Fs).astype(np.int)
         idx = startIndeces[:, None] + range(RP.nSamplesTransmit)
         ctx.indeces = torch.from_numpy(startIndeces)
         ctx.indeces = ctx.indeces.long()
         sig = np.zeros((ctx.numScat, RP.nSamples))
         # https://stackoverflow.com/questions/47516197/select-slices-range-of-columns-for-each-row-in-a-pandas-dataframe
         # Select certain columns per row broadcasting magic
+        print(np.arange(len(idx))[:, None].shape)
+        print(idx.shape)
+        print(ctx.tx.shape)
         sig[np.arange(len(idx))[:, None], idx] = ctx.tx
 
         sig = torch.from_numpy(sig)
         sig = torch.sum(sig, 0)
 
         return sig
+    """
 
-    #@staticmethod
-    #def backward(ctx, grad_output):
-    #    ps_grad = np.zeros_like(ctx.ps)
+    @staticmethod
+    def forward(ctx, ps, pData, RP):
+        ctx.ps = ps
+        ctx.numScat = list(ps.shape)[0]
+        ctx.projPos = pData.projPos.repeat(ctx.numScat, 1)
 
-    #    grad_matrix = grad_output.repeat(ctx.numScat, 1)
-    #    startIndex = np.zeros_like(ctx.indeces)
-    #    startIndex = totuple(startIndex)
-    #    stopIndex = totuple(ctx.indeces)
-    #    leftIndeces = np.linspace(startIndex, stopIndex, stopIndex)
-    #    print(leftIndeces.shape)
-    #    print(grad_matrix.shape)
-    #    return None
+        ctx.RP = RP
+        ctx.tx = RP.transmitSignal
 
+        t = torch.sqrt(torch.sum((ctx.projPos - ctx.ps)**2, 1))
+        tau = (t*2)/RP.c
+        startIndeces = (tau*RP.Fs).type(torch.int)
+
+        idx = startIndeces[:, None] + torch.arange(RP.nSamplesTransmit).to(RP.dev).type(torch.long)
+
+        ctx.indeces = startIndeces.type(torch.long)
+        sig = torch.zeros([ctx.numScat, RP.nSamples], dtype=torch.float64).to(RP.dev)
+
+        sig[(torch.arange(len(idx))[:, None]).type(torch.long), idx] = ctx.tx
+
+        sig = torch.sum(sig, 0)
+
+        return sig
+    # Should weight by positive potential because we want points to stick to ground truth points.
+    # Points hould move towards either minimum gradient or some weighted combination of the minimum gradient
+    # Need to average if gradient is postive over waveform and then move towards the most negative gradient. Should fix 3D. I think i'm sensitve to noise
+    # and overlay from z planes is causing ambiguities.
+    @staticmethod
+    def backward(ctx, grad_output):
+        #projPos = torch.from_numpy(ctx.projPos)
+        #ps = torch.from_numpy(ctx.ps)
+        projPos = ctx.projPos
+        ps = ctx.ps
+
+        # Find all negative gradients in waveform -> this is where points need to move
+        neg_grad_indeces = torch.where(grad_output < 0)[0]
+
+        #minVal = torch.min(grad_output, dim=0)[1]
+        #minVal = minVal.repeat(len(ctx.indeces))
+
+        rand_index = torch.randint(len(neg_grad_indeces), (ctx.numScat,))
+
+        # Are negative gradients to left or right of point indeces (set to 0 and 1 by int cast)
+        sign = (neg_grad_indeces[rand_index] < ctx.indeces).type(torch.int)
+
+        #dist = (ctx.indeces - minVal).to(ctx.RP.dev)
+
+        #b = 1/(1 + (grad_output[ctx.indeces] - grad_output[minVal]).abs())
+
+        #b = (grad_output[ctx.indeces]/grad_output[minVal]).abs()
+
+        #b = (grad_output[ctx.indeces]/grad_output[minVal].abs()).to(ctx.RP.dev)
+
+        # If to the left move tau other direction
+        sign[torch.where(sign == 0)] = -1
+
+        # Not sure if this is the most correct way to weight the derivatives. But not the worst
+        dTau = sign*((grad_output[neg_grad_indeces[rand_index]]).abs()) # Array of dTau for each point
+        #dTau = dist
+
+        #weight = (grad_output[ctx.indeces] > 0).type(torch.int).to(ctx.RP.dev)
+        #weight[torch.where(weight == 0)] = -1
+
+        # Derivative of euclidean distance
+        const = dTau * -1 * torch.pow(torch.sum((projPos - ps) ** 2), -.5)
+        ps_grad = torch.transpose(const.repeat(3, 1), 0, 1) * ((projPos - ps))
+
+        return ps_grad.to(ctx.RP.dev), None, None
+
+
+    """
     @staticmethod
     def backward(ctx, grad_output):
         ps_grad = np.zeros_like(ctx.ps)
@@ -161,14 +226,7 @@ class DelaySignalBatched(Function):
         #print(ps_grad[0, :])
 
         return ps_grad.to(ctx.RP.dev), None, None
-
-
-
-
-
-
-
-
+"""
 
 
 class DelaySignal(Function):
@@ -183,19 +241,17 @@ class DelaySignal(Function):
 
         for i in range(0, ctx.numScat):
             t = torch.sqrt(torch.sum((pData.projPos - ctx.ps[i, :]) ** 2))
-            tau = (t*2)/RP.c
+            tau = (t * 2) / RP.c
             sig = torch.zeros(RP.nSamples)
             timeIndex = (tau * RP.Fs).long()
             ctx.timeIndeces.append(timeIndex)
 
             sig[timeIndex:timeIndex + RP.nSamplesTransmit] = RP.transmitSignal
             final_sig += sig
-        #plt.clf()
-        #plt.stem(final_sig.detach().cpu().numpy(), use_line_collection=True)
-        #plt.show()
+        # plt.clf()
+        # plt.stem(final_sig.detach().cpu().numpy(), use_line_collection=True)
+        # plt.show()
         return final_sig
-
-
 
     """
     @staticmethod

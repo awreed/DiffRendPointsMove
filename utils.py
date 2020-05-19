@@ -77,6 +77,7 @@ def xcorr(t1, t2):
 # 0 error against Scipy and works with autograd
 def torchHilbert(u, RP):
     N = len(u)
+    #print(N)
     dev = RP.dev
 
     # Take forward fourier transform
@@ -89,6 +90,10 @@ def torchHilbert(u, RP):
         maskLeft = torch.ones((N // 2 - 1), requires_grad=False, dtype=torch.float64)
         maskLeftUp = maskLeft * 2
         maskRight = torch.zeros((N - (N // 2 - 1) - 2), requires_grad=False, dtype=torch.float64)
+        #print(DC)
+        #print(maskLeftUp)
+        #print(DC1)
+        #print(maskRight)
         Mask = torch.cat((DC, maskLeftUp, DC1, maskRight), 0).to(dev)
     else:
         DC = torch.tensor([1], requires_grad=False, dtype=torch.float64)

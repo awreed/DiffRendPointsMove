@@ -132,9 +132,10 @@ class Beamformer:
 
         for i in BI:
             posVecList.append(RP.projDataArray[i].projPos)
-            projWfmList.append(RP.projDataArray[i].wfm)
+            projWfmList.append(RP.projDataArray[i].wfmRC.vector())
         posVec = torch.stack(posVecList).to(RP.dev)
         wfmData = torch.stack(projWfmList).to(RP.dev)
+
 
         #if not wfmData.requires_grad:
         #    RP.save(key='GTWfm', val=wfmData)
@@ -197,22 +198,18 @@ class Beamformer:
                 tof_ind = ((tofs / torch.tensor(RP.c)) * torch.tensor(RP.Fs)).type(torch.long)
 
                 # Select index directly, not differentiable
-                real = wfmData[i, tof_ind]
+                real = wfmData[i, tof_ind, 0]
 
-                if real.requires_grad:
-                    h = real.register_hook(lambda x: RP.save(key='real', val=x))
-                    RP.hooks.append(h)
-
-                # imag = wfmData[i, tof_ind, 1]
+                imag = wfmData[i, tof_ind, 1]
 
                 pixGridReal.append(real)
-                # pixGridImag.append(imag)
+                pixGridImag.append(imag)
 
         real_full = torch.sum(torch.stack(pixGridReal), 0)
-        # imag_full = torch.sum(torch.stack(pixGridImag), 0)
+        imag_full = torch.sum(torch.stack(pixGridImag), 0)
 
-        # self.scene = Complex(real=real_full, imag=imag_full)
-        self.scene = real_full.to(RP.dev)
+        self.scene = Complex(real=real_full, imag=imag_full)
+        #self.scene = real_full.to(RP.dev)
         return self.scene
 
     def sideByside(self, **kwargs):
